@@ -16,6 +16,18 @@ from datetime import datetime as dt
 
 
 ## FUNCTION DEFINTIONS
+def create_github_meta(new_meta_df: pd.DataFrame, old_meta_filepath: str, meta_cols: list):
+    """Generate Github metadata with updated information about newly released samples"""
+    old_metadata = pd.read_csv(old_meta_filepath)
+    new_metadata = pd.concat([old_metadata, new_meta_df.loc[:, meta_cols]])
+    new_metadata.to_csv(out_dir/'metadata.csv', index=False)
+    return f"Github metadata saved in {out_dir/'metadata.csv'}"
+
+def create_gisaid_meta(new_meta_df: pd.DataFrame, meta_cols: list):
+    """Generate GISAID metadata for newly released samples"""
+    new_meta_df[meta_cols].to_csv(out_dir/'gisaid_metadata.csv', index=False)
+    return f"GISAID metadata saved in {out_dir/'gisaid_metadata.csv'}"
+
 
 def get_ids(filepaths: list) -> list:
     "Utility function to get a unified sample ID format from the analysis file paths"
@@ -40,8 +52,8 @@ def process_coverage_sample_ids(x):
     else:
         start_idx = x.find('SEARCH')
         return x[start_idx:start_idx+10] # SEARCHxxxx
-    
-    
+
+
 def compress_files(filepaths: list, destination='/home/al/tmp2/fa/samples.tar.gz'):
     "Utility function to compress list of files into a single .tar.gz file"
     with tarfile.open(destination, "w:gz") as tar:
@@ -61,11 +73,11 @@ def transfer_files(filepaths: pd.DataFrame, destination: str, include_bams=False
     if not Path.isdir(destination/'bam/'):
         Path.mkdir(destination/'bam/')
     with Pool(ncpus) as pool:
-        res = pool.starmap(transfer_cns_sequence, 
-                           zip(repeat(destination/"fa/"), 
+        res = pool.starmap(transfer_cns_sequence,
+                           zip(repeat(destination/"fa/"),
                                filepaths["PATH_x"].tolist(), filepaths["Virus name"].tolist()))
         if include_bams:
-            res = pool.starmap(transfer_bam, zip(repeat(destination/"bam/"), 
+            res = pool.starmap(transfer_bam, zip(repeat(destination/"bam/"),
                                                  filepaths["PATH_y"].tolist()))
         pool.close()
         pool.join()
@@ -75,8 +87,8 @@ def transfer_files(filepaths: pd.DataFrame, destination: str, include_bams=False
 def transfer_bam(out, bam_fp):
     n = os.path.join(out, os.path.basename(bam_fp))
     print("Transferring {} to {}".format(bam_fp, n))
-    out = subprocess.Popen(["samtools", "view", "-b", "-F", "4", "-o", n, bam_fp], 
-                           stdout = subprocess.PIPE, 
+    out = subprocess.Popen(["samtools", "view", "-b", "-F", "4", "-o", n, bam_fp],
+                           stdout = subprocess.PIPE,
                            stderr = subprocess.PIPE, shell=False)
     stdout, stderr = out.communicate()
     if len(stderr) !=0:
@@ -104,6 +116,18 @@ def process_id(x):
 
 if __name__=="__main__":
     # Input Parameters
+    # COLUMNS TO INCLUDE IN GITHUB METADATA
+    git_meta_cols = ["ID", "collection_date", "location", "percent_coverage_cds", "avg_depth", "authors", "originating_lab"]
+    # COLUMNS TO INCLUDE IN GISAID METADATA
+    gisaid_meta_cols = ['Submitter',
+                   'FASTA filename', 'Virus name', 'Type', 'Passage details/history',
+                   'Collection date', 'location', 'Additional location information',
+                   'Host', 'Additional host information', 'Gender', 'Patient age',
+                   'Patient status', 'Specimen source', 'Outbreak', 'Last vaccinated',
+                   'Treatment', 'Sequencing technology', 'Assembly method', 'Coverage',
+                   'originating_lab', 'Address', 'Sample ID given by the sample provider',
+                   'Submitting lab', 'Address.1',
+                   'Sample ID given by the submitting laboratory', 'authors', 'avg_depth']
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-d', "--not-dry-run", action='store_false', help="Dry run. Default: True")
@@ -112,7 +136,7 @@ if __name__=="__main__":
 
     parser.add_argument("-r", "--reference",
                         type=str,
-                        default=None,
+                        default="/home/gk/code/hCoV19/db/NC045512.fasta",
                         help="Reference to use")
 
     parser.add_argument("-o", "--out-dir",
@@ -144,7 +168,7 @@ if __name__=="__main__":
     # whether or not to include bam files in the release
     include_bams = args.include_bams
     # these are the columns to include in the metadata.csv output
-    meta_columns = ['sample_id', 'Virus name', 'Submitting lab', 'Location', 'Collection date', 'AVG_DEPTH', 'COVERAGE']
+    
     # path to reference sequence (used later for MSA and tree construction)
     ref_path = Path(args.reference) if args.reference is not None else None
     # this is the directory where results get saved
@@ -178,9 +202,8 @@ if __name__=="__main__":
 
     # Collecting Sequence Data
 
-
     # grab all filepaths for bam data
-    bam_filepaths = glob.glob("{}/**/merged_aligned_bams/illumina/*.bam".format(analysis_fpath))
+    bam_filepaths = glob.glob(f"{analysis_fpath}/**/merged_aligned_bams/illumina/*.bam")
     bam_filepaths = [Path(fp) for fp in bam_filepaths]
     # consolidate sample ID format
     bam_ids = get_ids(bam_filepaths)
@@ -188,7 +211,7 @@ if __name__=="__main__":
     bam_data = list(zip(*[bam_ids, bam_filepaths]))
     bam_df = pd.DataFrame(data=bam_data, columns=['sample_id', 'PATH'])
     # grab all paths to consensus sequences
-    consensus_filepaths = glob.glob("{}/**/consensus_sequences/illumina/*.fa".format(analysis_fpath))
+    consensus_filepaths = glob.glob(f"{analysis_fpath}/**/consensus_sequences/illumina/*.fa")
     consensus_filepaths = [Path(fp) for fp in consensus_filepaths]
     # consolidate sample ID format
     consensus_ids = get_ids(consensus_filepaths)
@@ -202,8 +225,6 @@ if __name__=="__main__":
     consensus_df = consensus_df[(consensus_df['sample_id'].str.contains('SEARCH'))]
     # merge consensus and bam filepaths for each sample ID
     analysis_df = pd.merge(consensus_df, bam_df, on='sample_id', how='left')
-    # exclude any samples that do not have BAM data
-    analysis_df = analysis_df[~analysis_df['PATH_y'].isna()]
     # load sample sheet data (GISAID) - make sure to download most recent one
     seqsum = pd.read_csv(sample_sheet_fpath)
     # clean up
@@ -214,7 +235,15 @@ if __name__=="__main__":
     seqsum = seqsum[seqsum['New sequences ready for release'] == 'Yes']
     # JOIN summary sheet with analysis meta data
     sequence_results = pd.merge(seqsum, analysis_df, on='sample_id', how='inner')
-    print("Preparing {} sammples for release".format(sequence_results.shape[0]))
+    # compute number of samples with missing consensus and/or bam files
+    num_seqs_found = sequence_results['sample_id'].unique().shape[0]
+    num_samples_missing_cons = num_seqs_to_release - num_seqs_found
+    num_samples_missing_bams = 'NA'
+    if include_bams:
+        # exclude any samples that do not have BAM data
+        num_samples_missing_bams = sequence_results[sequence_results['PATH_y'].isna()].shape[0]
+        sequence_results = sequence_results[~sequence_results['PATH_y'].isna()]
+    print(f"Preparing {sequence_results.shape[0]} samples for release")
     # samples missing consensus or BAM sequence files
     num_samples_missing_bams = sequence_results[sequence_results['PATH_y'].isna()].shape[0]
     num_samples_missing_cons = sequence_results[sequence_results['PATH_x'].isna()].shape[0]
@@ -244,34 +273,32 @@ if __name__=="__main__":
               .drop_duplicates(subset=['sample_id'], keep='last'))
     # JOIN results with coverage info
     ans = (
-        pd.merge(final_result, cov_df, on='sample_id')
-        .assign(
-            collection_date = lambda x: pd.to_datetime(x["Collection date"]).dt.strftime("%Y-%m-%d")
-        )
-        .rename(columns={
-            "SEARCH SampleID": "ID",
-            "Location": "location",
-            "COVERAGE": "percent_coverage_cds",
-            "AVG_DEPTH": "avg_depth",
-            "Authors": "authors",
-            "Originating lab": "originating_lab"
-        })
+    pd.merge(final_result, cov_df, 
+             on='sample_id', how='left')
+      .assign(
+        collection_date = lambda x: pd.to_datetime(x["Collection date"]).dt.strftime("%Y-%m-%d")
     )
-    # COLUMNS TO INCLUDE IN METADATA
-    meta_cols = ["ID", "gb_accession", "gisaid_accession", "collection_date", "location", "percent_coverage_cds", "avg_depth", "authors", "originating_lab"]
-
-    old_metadata = pd.read_csv(released_samples_fpath)
-
-    ans = pd.concat([old_metadata, ans.loc[:, meta_cols]])
-
-    ans.to_csv(out_dir/'metadata.csv', index=False)
-
+      .rename(columns={
+        "SEARCH SampleID": "ID",
+        "Location": "location",
+        "COVERAGE": "percent_coverage_cds",
+        "AVG_DEPTH": "avg_depth",
+        "Authors": "authors",
+        "Originating lab": "originating_lab"
+    })
+    )
+    num_samples_missing_coverage = ans[ans['percent_coverage_cds'].isna()].shape[0]
+    # generate files containing metadata for Github, GISAID
+    create_github_meta(ans, released_samples_fpath, git_meta_cols)
+    create_gisaid_meta(ans, gisaid_meta_cols) 
+    # compute number of samples below 90% coverage
     low_coverage_samples = ans[ans["percent_coverage_cds"] < 90]
     # Data logging
     with open("{}/data_release.log".format(out_dir), 'w') as f:
-        f.write('{} samples were found to have coverage below 90%\n'.format(low_coverage_samples.shape[0]))
-        f.write('{} samples were ignored because they were missing consensus sequence files\n'.format(num_samples_missing_cons))
-        f.write('{} samples were ignored because they were missing BAM sequence files\n'.format(num_samples_missing_bams))
-    print("Transfer Complete. All results saved in {}".format(out_dir))
+        f.write(f'{num_samples_missing_coverage} samples are missing coverage information\n')
+        f.write(f'{low_coverage_samples.shape[0]} samples were found to have coverage below 90%\n')
+        f.write(f'{num_samples_missing_cons} samples were ignored because they were missing consensus sequence files\n')
+        f.write(f'{num_samples_missing_bams} samples were ignored because they were missing BAM sequence files\n')
+print(f"Transfer Complete. All results saved in {out_dir}")
 
 
