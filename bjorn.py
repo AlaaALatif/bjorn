@@ -63,7 +63,7 @@ def compress_files(filepaths: list, destination='/home/al/tmp2/fa/samples.tar.gz
 
 
 def transfer_files(filepaths: pd.DataFrame, destination: str, include_bams=False, ncpus = 1):
-    "Utility function to copy consensus and BAM files of given samples dataframe"
+    "Utility function to copy consensus and BAM files of given samples from source to destination"
     filepaths = filepaths[['PATH_x', 'PATH_y', "Virus name"]]
     destination = Path(destination)
     if not Path.isdir(destination):
@@ -128,6 +128,7 @@ if __name__=="__main__":
                    'originating_lab', 'Address', 'Sample ID given by the sample provider',
                    'Submitting lab', 'Address.1',
                    'Sample ID given by the submitting laboratory', 'authors', 'avg_depth']
+    
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-d', "--not-dry-run", action='store_false', help="Dry run. Default: True")
@@ -191,7 +192,7 @@ if __name__=="__main__":
     # released_samples_fpath = "/home/gk/analysis/hcov-19-genomics/metadata.csv"
     # dry_run = True
 
-    print(f"""
+    print(f"""User Specified Parameters:
     Dry run: {dry_run}.
     Include BAMS: {include_bams}.
     Reading release summary file from {sample_sheet_fpath}.
@@ -299,6 +300,6 @@ if __name__=="__main__":
         f.write(f'{low_coverage_samples.shape[0]} samples were found to have coverage below 90%\n')
         f.write(f'{num_samples_missing_cons} samples were ignored because they were missing consensus sequence files\n')
         f.write(f'{num_samples_missing_bams} samples were ignored because they were missing BAM sequence files\n')
-print(f"Transfer Complete. All results saved in {out_dir}")
+    print(f"Transfer Complete. All results saved in {out_dir}")
 
 
