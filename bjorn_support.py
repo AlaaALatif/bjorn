@@ -87,10 +87,10 @@ def map_gene_to_pos(x):
 
 def concat_fasta(in_dir, out_dir):
     """Concatenate fasta sequences into single fasta file"""
-    cat_cmd = f"cat {in_dir}/*.fa > {out_dir}.fa"
+    cat_cmd = f"cat {in_dir}/fa/*.fa* > {out_dir}.fa"
     return subprocess.check_call(cat_cmd, shell=True)
 
-def align_fasta(fasta_filepath):
+def align_fasta(fasta_filepath, num_cpus=8):
     """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file"""
     msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath}.fa > {fasta_filepath}_aligned.fa"
     return subprocess.check_call(msa_cmd, shell=True)
