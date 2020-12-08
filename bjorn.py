@@ -13,9 +13,43 @@ from multiprocessing import Pool
 from itertools import repeat
 import os
 from datetime import datetime as dt
+from bjorn_support import concat_fasta, align_fasta
 
 
 ## FUNCTION DEFINTIONS
+def assemble_genbank_release(cns_seqs: list, df: pd.DataFrame, meta_cols: list, genbank_dir: Path):
+    # create directory for genbank release
+    if not Path.isdir(genbank_dir):
+        Path.mkdir(genbank_dir);
+    authors = {}
+    # group samples by author
+    for ctr, (n, grp) in enumerate(df.groupby('authors')):
+        authors[ctr+1] = n
+        # generate sample metadata
+        genbank_meta = create_genbank_meta(grp, meta_cols)
+        genbank_meta.to_csv(genbank_dir/f'genbank_metadata_{ctr+1}.tsv', sep='\t', index=False)
+        # fetch consensus sequences of those samples
+        recs = [i for i in cns_seqs if i.name in genbank_meta['Sequence_ID'].tolist()]
+        SeqIO.write(recs, genbank_dir/f'genbank_release_{ctr+1}.fa', 'fasta')
+    # write mapping of index to author for later reference
+    (pd.DataFrame.from_dict(authors, orient='index')
+       .rename(columns={0: 'authors'})
+       .to_csv(genbank_dir/'authors.tsv', sep='\t'))
+    return f"Genbank data release saved in {genbank_dir}"
+
+
+def create_genbank_meta(df: pd.DataFrame, meta_cols: list) -> pd.DataFrame:
+    genbank_meta = df[meta_cols].copy()
+    genbank_meta['country'] = genbank_meta['location'].apply(lambda x: x.split('/')[0])
+    genbank_meta['isolate'] = genbank_meta['Virus name'].str.replace('hCoV-19', 'SARS-CoV-2/human')
+    genbank_meta['host'] = genbank_meta['Host'].str.replace('Human', 'Homo Sapiens')
+    genbank_meta.rename(columns={'Virus name': 'Sequence_ID', 'collection_date': 'collection-date',
+                                 'Specimen source': 'isolation-source'}, inplace=True)
+    genbank_meta.loc[genbank_meta['country']=='MEX', 'country'] = 'Mexico'
+    return genbank_meta[['Sequence_ID', 'isolate', 'country', 
+                         'collection-date', 'host', 'isolation-source']]
+
+
 def create_github_meta(new_meta_df: pd.DataFrame, old_meta_filepath: str, meta_cols: list):
     """Generate Github metadata with updated information about newly released samples"""
     old_metadata = pd.read_csv(old_meta_filepath)
@@ -128,7 +162,8 @@ if __name__=="__main__":
                    'originating_lab', 'Address', 'Sample ID given by the sample provider',
                    'Submitting lab', 'Address.1',
                    'Sample ID given by the submitting laboratory', 'authors', 'avg_depth']
-    
+    # COLUMNS TO INCLUDE IN GITHUB METADATA
+    genbank_meta_cols = ['Sample ID', 'ID', 'Virus name', 'location', 'Specimen source', 'collection_date', 'Host']
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-d', "--not-dry-run", action='store_false', help="Dry run. Default: True")
@@ -234,6 +269,7 @@ if __name__=="__main__":
     seqsum.loc[:, 'sample_id'] = seqsum['SEARCH SampleID'].apply(process_id)
     seqsum.drop_duplicates(subset=['sample_id'], keep='last', inplace=True)
     seqsum = seqsum[seqsum['New sequences ready for release'] == 'Yes']
+    num_seqs_to_release = seqsum['sample_id'].unique().shape[0]
     # JOIN summary sheet with analysis meta data
     sequence_results = pd.merge(seqsum, analysis_df, on='sample_id', how='inner')
     # compute number of samples with missing consensus and/or bam files
@@ -258,7 +294,7 @@ if __name__=="__main__":
     # get IDs of samples that have already been released
     released_seqs = meta_df['sample_id'].unique()
     # filter out released samples from all the samples we got
-    final_result = sequence_results[~sequence_results['sample_id'].isin(released_seqs)]
+    final_result = sequence_results.copy()#[~sequence_results['sample_id'].isin(released_seqs)]
     # Transfer files
     if not dry_run:
         transfer_files(final_result, out_dir, include_bams=include_bams, ncpus=num_cpus)
@@ -289,9 +325,22 @@ if __name__=="__main__":
     })
     )
     num_samples_missing_coverage = ans[ans['percent_coverage_cds'].isna()].shape[0]
-    # generate files containing metadata for Github, GISAID
+    # generate concatenated consensus sequences
+    msa_dir = out_dir/'msa'
+    if not Path.isdir(msa_dir):
+        Path.mkdir(msa_dir);
+    seqs_dir = Path(out_dir/'fa')
+    copy(ref_path, seqs_dir);
+    concat_fasta(out_dir, msa_dir/out_dir.basename());
+    # generate multiple sequence alignment
+    align_fasta(msa_dir/out_dir.basename(), num_cpus=num_cpus);
+    # load concatenated sequences
+    cns_seqs = SeqIO.parse(msa_dir/out_dir.basename()+'.fa', 'fasta')
+    cns_seqs = list(cns_seqs)
+    # generate files containing metadata for Github, GISAID, GenBank
     create_github_meta(ans, released_samples_fpath, git_meta_cols)
     create_gisaid_meta(ans, gisaid_meta_cols) 
+    assemble_genbank_release(cns_seqs, ans, genbank_meta_cols, out_dir/'genbank')
     # compute number of samples below 90% coverage
     low_coverage_samples = ans[ans["percent_coverage_cds"] < 90]
     # Data logging
