@@ -4,6 +4,7 @@ import path
 import numpy as np
 import pandas as pd
 
+
 def get_variant_filepaths(sample_ids: list, analysis_path: str='/home/gk/analysis') -> dict:
     """Takes list of sample IDs and returns filepaths of variant data for corresponding samples"""
     variant_paths = {}
@@ -23,6 +24,20 @@ def get_variant_data(variant_filepaths: dict):
     df = (pd.concat((pd.read_csv(f, sep='\t')
                      .assign(sample=s_id, location=find_loc(f)) for s_id, f in variant_filepaths.items())))
     return df
+
+
+def concat_fasta(in_dir, out_dir):
+    """Concatenate fasta sequences into single fasta file"""
+    cat_cmd = f"cat {in_dir}/fa/*.fa* > {out_dir}.fa"
+    subprocess.check_call(cat_cmd, shell=True)
+    return f"{out_dir}.fa"
+
+
+def align_fasta(fasta_filepath, num_cpus=8):
+    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft"""
+    msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath}.fa > {fasta_filepath}_aligned.fa"
+    subprocess.check_call(msa_cmd, shell=True)
+    return f"{fasta_filepath}_aligned.fa"
 
 
 def add_gene_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -83,17 +98,6 @@ def map_gene_to_pos(x):
     elif pos >= 29564 and pos <= 29670:
         return 'ORF10'
     return 'nan'
-
-
-def concat_fasta(in_dir, out_dir):
-    """Concatenate fasta sequences into single fasta file"""
-    cat_cmd = f"cat {in_dir}/fa/*.fa* > {out_dir}.fa"
-    return subprocess.check_call(cat_cmd, shell=True)
-
-def align_fasta(fasta_filepath, num_cpus=8):
-    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file"""
-    msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath}.fa > {fasta_filepath}_aligned.fa"
-    return subprocess.check_call(msa_cmd, shell=True)
 
 
 def create_gff2gene_mapping(variant_data: pd.DataFrame, gff_filepath: str) -> dict:

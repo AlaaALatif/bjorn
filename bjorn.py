@@ -13,7 +13,8 @@ from multiprocessing import Pool
 from itertools import repeat
 import os
 from datetime import datetime as dt
-from bjorn_support import concat_fasta, align_fasta
+from bjorn_support import concat_fasta, align_fasta, map_gene_to_pos
+from onion_trees import identify_deletions, process_cns_seqs, adjust_coords
 
 
 ## FUNCTION DEFINTIONS
@@ -184,6 +185,11 @@ if __name__=="__main__":
                         type=str,
                         default="/home/gk/code/hCoV19/db/NC045512.fasta",
                         help="Reference to use")
+    
+    parser.add_argument("-rn", "--reference-name",
+                        type=str,
+                        default="NC_045512.2",
+                        help="FASTA header name for reference")
 
     parser.add_argument("-o", "--out-dir",
                         type=str,
@@ -217,6 +223,7 @@ if __name__=="__main__":
     
     # path to reference sequence (used later for MSA and tree construction)
     ref_path = Path(args.reference) if args.reference is not None else None
+    patient_zero = args.reference_name
     # this is the directory where results get saved
     out_dir = Path(args.out_dir)
     # number of cores to use
@@ -341,9 +348,7 @@ if __name__=="__main__":
         Path.mkdir(msa_dir);
     seqs_dir = Path(out_dir/'fa')
     copy(ref_path, seqs_dir);
-    concat_fasta(out_dir, msa_dir/out_dir.basename());
-    # generate multiple sequence alignment
-    align_fasta(msa_dir/out_dir.basename(), num_cpus=num_cpus);
+    seqs_fp = concat_fasta(out_dir, msa_dir/out_dir.basename());
     # load concatenated sequences
     cns_seqs = SeqIO.parse(msa_dir/out_dir.basename()+'.fa', 'fasta')
     cns_seqs = list(cns_seqs)
@@ -354,10 +359,29 @@ if __name__=="__main__":
     sra_dir = out_dir/'sra'
     if not Path.isdir(sra_dir):
         Path.mkdir(sra_dir);
-    input(f"Have you received the BioSample.txt files and placed them inside {sra_dir}? \n Press Enter to continue...")
+    input(f"\n Have you received the BioSample.txt files and placed them inside {sra_dir}? \n Press Enter to continue...")
     create_sra_meta(ans, sra_dir)
     # compute number of samples below 90% coverage
     low_coverage_samples = ans[ans["percent_coverage_cds"] < 90]
+    # generate file containing deletions found
+    # generate multiple sequence alignment
+    msa_fp = align_fasta(msa_dir/out_dir.basename(), num_cpus=num_cpus);
+    # read MSA file
+    cns_seqs = AlignIO.read(msa_fp, 'fasta')
+    # process aligned sequences to prepare for deletion identification, return ref seq with indels removed for reporting correct positions
+    seqs, ref_seq = process_cns_seqs(cns_seqs, patient_zero)
+    # identify deletions
+    deletions = identify_deletions(msa_fp, patient_zero, min_del_len=1)
+    # adjust coordinates to account for the nts trimmed from beginning e.g. 265nts
+    deletions['del_coords'] = deletions['del_coords'].apply(adjust_coords)
+    # record the 5 nts before each deletion (based on reference seq)
+    deletions['prev_5nts'] = deletions['del_coords'].apply(lambda x: ref_seq[int(x.split(':')[0])-5:int(x.split(':')[0])])
+    # record the 5 nts after each deletion (based on reference seq)
+    deletions['next_5nts'] = deletions['del_coords'].apply(lambda x: ref_seq[int(x.split(':')[1])+1:int(x.split(':')[1])+6])
+    # approximate the gene where each deletion was identified
+    deletions['gene'] = deletions['del_coords'].apply(lambda x: int(x.split(':')[0])).apply(map_gene_to_pos)
+    # save deletion results to file
+    deletions.to_csv(out_dir/'deletions.csv', index=False)
     # Data logging
     with open("{}/data_release.log".format(out_dir), 'w') as f:
         f.write(f'{num_samples_missing_coverage} samples are missing coverage information\n')
