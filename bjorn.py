@@ -17,6 +17,16 @@ from bjorn_support import concat_fasta, align_fasta
 
 
 ## FUNCTION DEFINTIONS
+def create_sra_meta(df: pd.DataFrame, sra_dir: Path):
+    biosample_paths = glob.glob(f"{sra_dir}/*.txt")
+    biosample_df = pd.concat((pd.read_csv(f, sep='\t') for f in biosample_paths))
+    biosample_df["sample_id"] = biosample_df["Sample Name"].apply(lambda x: "".join(x.split("-")[:2]))
+    bam_files = ans.loc[~ans['PATH_y'].isna()][['sample_id', 'PATH_y']].rename(columns={'PATH_y': 'file_name'})
+    sra_merged = pd.merge(biosample_df, bam_files, on="sample_id")
+    sra_merged[["Accession", "Sample Name", "file_name"]].to_csv(sra_dir/"sra_metadata.csv", index=False)
+    return f"SRA metadata saved in {sra_dir/'sra_metadata.csv'}"
+
+
 def assemble_genbank_release(cns_seqs: list, df: pd.DataFrame, meta_cols: list, genbank_dir: Path):
     # create directory for genbank release
     if not Path.isdir(genbank_dir):
@@ -341,6 +351,11 @@ if __name__=="__main__":
     create_github_meta(ans, released_samples_fpath, git_meta_cols)
     create_gisaid_meta(ans, gisaid_meta_cols) 
     assemble_genbank_release(cns_seqs, ans, genbank_meta_cols, out_dir/'genbank')
+    sra_dir = out_dir/'sra'
+    if not Path.isdir(sra_dir):
+        Path.mkdir(sra_dir);
+    input(f"Have you received the BioSample.txt files and placed them inside {sra_dir}? \n Press Enter to continue...")
+    create_sra_meta(ans, sra_dir)
     # compute number of samples below 90% coverage
     low_coverage_samples = ans[ans["percent_coverage_cds"] < 90]
     # Data logging
