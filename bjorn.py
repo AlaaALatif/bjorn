@@ -14,7 +14,7 @@ from itertools import repeat
 import os
 from datetime import datetime as dt
 from bjorn_support import concat_fasta, align_fasta, map_gene_to_pos
-from onion_trees import identify_deletions, process_cns_seqs, adjust_coords
+from onion_trees import identify_deletions, identify_insertions
 
 
 ## FUNCTION DEFINTIONS
@@ -366,22 +366,14 @@ if __name__=="__main__":
     # generate file containing deletions found
     # generate multiple sequence alignment
     msa_fp = align_fasta(msa_dir/out_dir.basename(), num_cpus=num_cpus);
-    # read MSA file
-    cns_seqs = AlignIO.read(msa_fp, 'fasta')
-    # process aligned sequences to prepare for deletion identification, return ref seq with indels removed for reporting correct positions
-    seqs, ref_seq = process_cns_seqs(cns_seqs, patient_zero)
     # identify deletions
     deletions = identify_deletions(msa_fp, patient_zero, min_del_len=1)
-    # adjust coordinates to account for the nts trimmed from beginning e.g. 265nts
-    deletions['del_coords'] = deletions['del_coords'].apply(adjust_coords)
-    # record the 5 nts before each deletion (based on reference seq)
-    deletions['prev_5nts'] = deletions['del_coords'].apply(lambda x: ref_seq[int(x.split(':')[0])-5:int(x.split(':')[0])])
-    # record the 5 nts after each deletion (based on reference seq)
-    deletions['next_5nts'] = deletions['del_coords'].apply(lambda x: ref_seq[int(x.split(':')[1])+1:int(x.split(':')[1])+6])
-    # approximate the gene where each deletion was identified
-    deletions['gene'] = deletions['del_coords'].apply(lambda x: int(x.split(':')[0])).apply(map_gene_to_pos)
     # save deletion results to file
     deletions.to_csv(out_dir/'deletions.csv', index=False)
+    # identify insertions
+    insertions = identify_insertions(msa_fp, patient_zero, min_ins_len=1)
+    # save deletion results to file
+    insertions.to_csv(out_dir/'insertions.csv', index=False)
     # Data logging
     with open("{}/data_release.log".format(out_dir), 'w') as f:
         f.write(f'{num_samples_missing_coverage} samples are missing coverage information\n')
