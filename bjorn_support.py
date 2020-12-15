@@ -28,16 +28,25 @@ def get_variant_data(variant_filepaths: dict):
 
 def concat_fasta(in_dir, out_dir):
     """Concatenate fasta sequences into single fasta file"""
-    cat_cmd = f"cat {in_dir}/fa/*.fa* > {out_dir}.fa"
+    cat_cmd = f"cat {in_dir}/*.fa* > {out_dir}.fa"
     subprocess.check_call(cat_cmd, shell=True)
     return f"{out_dir}.fa"
 
 
 def align_fasta(fasta_filepath, num_cpus=8):
     """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft"""
-    msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath}.fa > {fasta_filepath}_aligned.fa"
+    out_filepath = fasta_filepath.split('.')[0] + '_aligned.fa'
+    msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath} > {out_filepath}"
     subprocess.check_call(msa_cmd, shell=True)
-    return f"{fasta_filepath}_aligned.fa"
+    return out_filepath
+
+
+def align_fasta_reference(fasta_filepath, num_cpus=8, ref_fp: str=''):
+    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft"""
+    out_filepath = fasta_filepath.split('.')[0] + '_aligned.fa'
+    msa_cmd = f"mafft --auto --thread {num_cpus} --keeplength --addfragments {fasta_filepath} {ref_fp} > {out_filepath}"
+    subprocess.check_call(msa_cmd, shell=True)
+    return out_filepath
 
 
 def add_gene_column(df: pd.DataFrame) -> pd.DataFrame:
