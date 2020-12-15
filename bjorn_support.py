@@ -34,7 +34,8 @@ def concat_fasta(in_dir, out_dir):
 
 
 def align_fasta(fasta_filepath, num_cpus=8):
-    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft"""
+    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft.
+    TODO: ALLOW USER TO INPUT CUSTOM COMMAND"""
     out_filepath = fasta_filepath.split('.')[0] + '_aligned.fa'
     msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath} > {out_filepath}"
     subprocess.check_call(msa_cmd, shell=True)
@@ -47,6 +48,22 @@ def align_fasta_reference(fasta_filepath, num_cpus=8, ref_fp: str=''):
     msa_cmd = f"mafft --auto --thread {num_cpus} --keeplength --addfragments {fasta_filepath} {ref_fp} > {out_filepath}"
     subprocess.check_call(msa_cmd, shell=True)
     return out_filepath
+
+
+def compute_tree(msa_filepath, num_cpus=8):
+    """Compute ML tree of aligned sequences in input fasta using iqtree"""
+    out_filepath = msa_filepath + '.treefile'
+    tree_cmd = f"iqtree -s {msa_filepath} -nt 6 -m HKY -czb -fast"
+    subprocess.check_call(tree_cmd, shell=True)
+    return out_filepath
+
+
+def compute_time_tree(msa_filepath, tree_filepath, num_cpus=8):
+    """Compute time tree (???)"""
+    out_path = '/'.join(msa_filepath.split('/')[:-1]) + '/timetree'
+    tree_cmd = f"treetime ancestral --aln {msa_filepath} --tree {tree_filepath} --outdir {out_path}"
+    subprocess.check_call(tree_cmd, shell=True)
+    return out_path
 
 
 def add_gene_column(df: pd.DataFrame) -> pd.DataFrame:
