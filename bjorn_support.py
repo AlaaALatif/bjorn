@@ -5,6 +5,30 @@ import numpy as np
 import pandas as pd
 
 
+def get_filepaths(analysis_path: str, data_fmt: str, sample_ids: list=[], 
+                  data_type: str='consensus', tech: str='illumina') -> dict:
+    """Take list of sample IDs, the general area where your files are located, and their format.
+       Returns a dictionary with sample IDs as keys and the filepaths as values.
+    """
+    file_paths = {}
+    if sample_ids:
+        for s_id in sample_ids:
+            f = glob.glob(f"{analysis_path}/*{data_type}*/*{tech}*/*{s_id}*.{data_fmt}")
+            try:
+                file_paths[s_id] = f[0]
+            except:
+                continue
+    else:
+        fs = glob.glob(f"{analysis_path}/*.fa*")
+        for f in fs:
+            try:
+                sample_id = f.split('/')[-1].split('_')[0].split('-')[1]
+            except:
+                continue
+            file_paths[sample_id] = f
+    return file_paths
+
+
 def get_variant_filepaths(sample_ids: list, analysis_path: str='/home/gk/analysis') -> dict:
     """Takes list of sample IDs and returns filepaths of variant data for corresponding samples"""
     variant_paths = {}
