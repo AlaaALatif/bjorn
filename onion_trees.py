@@ -1,10 +1,131 @@
 import pandas as pd
 import re
+import matplotlib
+import matplotlib.pylab as plt
+from matplotlib.lines import Line2D
+import matplotlib.colors as mcolors
+import matplotlib.gridspec as gridspec
 import numpy as np
 from Bio import SeqIO, AlignIO, Phylo, Align
 from itertools import groupby
 import more_itertools as mit
 from bjorn_support import map_gene_to_pos
+
+
+def visualize_tree(tree, sample_colors={}, figsize=(40, 100)):
+    f = plt.figure(figsize=figsize)
+    f = plt.figure()
+    gs = gridspec.GridSpec(2, 2, width_ratios=[1,0.75], 
+                           height_ratios = [0.5,0.5])
+
+    ax = plt.subplot(gs[:,0])
+    # draw tree branches
+    for i in tree.get_nonterminals():
+        for j in i.clades:
+    #         if prune_clade(j, deletion_samples): continue
+            _t = ax.plot([i.x, i.x], [i.y, j.y], 
+                         ls='-', color="#000000", zorder = 1)
+            _t = ax.plot([i.x, j.x], [j.y, j.y], 
+                         ls='-', color="#000000", zorder = 1)
+    # stores attributes for each sample in the tree
+    _ = {
+        "x": [],
+        "y": [],
+        "c": [],
+        "o": [],
+    }
+    # for each sample
+    for i in tree.get_terminals():
+        _["x"].append(i.x)  # x coordinates
+        _["y"].append(i.y)  # y coordinates
+        _["c"].append(sample_colors.get(i.name, {'color': 'white'})['color'])  # colors
+        _["o"].append(sample_colors.get(i.name, {'freq': 0.})['freq'])  # opacity
+        ax.text(i.x+1e-5, i.y-1e-1, i.name)  # name
+
+    _["co"] = generate_color_array(_["c"], _["o"])
+    # draw annotated nodes
+    ax.scatter(_["x"], _["y"], c = _["co"], s = 100, zorder = 2)
+    ax.scatter(_["x"], _["y"], c = _["co"], s = 50, zorder = 2)
+    ax.legend(handles=legend)
+    f.patch.set_visible(False)
+    ax.axis('off')
+    return plt
+
+
+def load_tree(tree_path: str, patient_zero: str):
+    """Load a ML tree file (nwk format) into a Phylo tree object
+    `patient_zero` is a user-specified reference name for rooting the tree"""
+    tree = next(Phylo.parse(tree_path, 'newick'))
+    tree.root_with_outgroup(patient_zero)
+    return tree
+
+
+def generate_color_array(colors, opacities):
+    """Generate RGB arrays each with opacity values that corresponds 
+    to the frequency of the mutation present in each sample"""
+    co = np.zeros((len(colors), 4))
+    for i, (c, o) in enumerate(zip(colors, opacities)):
+        co[i, :3] = matplotlib.colors.to_rgb(c)
+        co[i, 3] = o
+    return co
+
+
+def get_color_legends(indel2color: dict) -> list:
+    """Generate legend objects based on input dict of INDELs and their colors"""
+    legend_elements = [Line2D([0], [0], marker='o', 
+                              color=x, label=y, 
+                              markerfacecolor=x, 
+                              markersize=15) for y, x in indel2color.items()]
+    return legend_elements
+
+
+def get_opacity_legends(freq2opacity: dict) -> list:
+    """Generate legend objects based on input dict of frequency (lower-bound)
+    and its opacity level"""
+    legend_elements = [Line2D([0], [0], marker='o', 
+                              color='white', label=y, 
+                              alpha=x,
+                              markerfacecolor='black', 
+                              markersize=15) for y, x in freq2opacity.items()]
+    return legend_elements
+
+
+def create_freq2opacity(n: int) -> dict:
+    """Create mapping between variant frequency (lower-bound) and 
+    opacity level"""
+    freq2opacity = {}
+    for i in range(n):
+        freq2opacity[i] = (1./n)*(i+1)
+    return freq2opacity
+
+
+def map_opacity(freq: float, freq2opacity: dict) -> float:
+    """Take an input iSNV frequency and return the corresponding 
+    opacity level for plotting"""
+    x = int(freq*10)
+    return freq2opacity[x]
+
+
+def find_indel_coords(indel_start, indel2color):
+    """Identify INDEL coordinates that correspond to a specific start position"""
+    for indel_coords in indel2color.keys():
+        if int(indel_coords.split(':')[0]) == indel_start:
+            return indel_coords
+
+
+def get_coords(tree):
+    """Takes Phylo tree object and populates it with coordinates 
+    that can be used to plot the tree from scratch"""
+    for _i, i in enumerate(tree.get_terminals()):
+        i.y = _i
+        i.x = tree.distance(i)
+
+    for i in reversed(tree.get_nonterminals()):
+        _ = i.clades
+        i.y = (_[0].y + _[-1].y)/2
+        i.x = tree.distance(i)
+    return tree
+
 
 def identify_deletions(input_filepath: str, patient_zero: str, min_del_len: int=2,
                        start_pos: int=265, end_pos: int=29674) -> pd.DataFrame:
