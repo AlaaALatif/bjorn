@@ -13,8 +13,8 @@ from multiprocessing import Pool
 from itertools import repeat
 import os
 from datetime import datetime as dt
-from bjorn_support import concat_fasta, align_fasta, map_gene_to_pos
-from onion_trees import identify_deletions, identify_insertions
+from bjorn_support import concat_fasta, align_fasta, compute_tree, map_gene_to_pos
+from onion_trees import identify_deletions, identify_insertions, load_tree, visualize_tree, get_indel2color, get_sample2color
 
 
 ## FUNCTION DEFINTIONS
@@ -348,7 +348,7 @@ if __name__=="__main__":
         Path.mkdir(msa_dir);
     seqs_dir = Path(out_dir/'fa')
     copy(ref_path, seqs_dir);
-    seqs_fp = concat_fasta(out_dir, msa_dir/out_dir.basename());
+    seqs_fp = concat_fasta(seqs_dir, msa_dir/out_dir.basename());
     # load concatenated sequences
     cns_seqs = SeqIO.parse(msa_dir/out_dir.basename()+'.fa', 'fasta')
     cns_seqs = list(cns_seqs)
@@ -365,15 +365,48 @@ if __name__=="__main__":
     low_coverage_samples = ans[ans["percent_coverage_cds"] < 90]
     # generate file containing deletions found
     # generate multiple sequence alignment
-    msa_fp = align_fasta(msa_dir/out_dir.basename(), num_cpus=num_cpus);
+    msa_fp = align_fasta(seqs_fp, num_cpus=num_cpus);
+    # compute ML tree
+    tree_dir = out_dir/'trees'
+    if not Path.isdir(tree_dir):
+        Path.mkdir(tree_dir);
+    tree_fp = compute_tree(msa_fp, num_cpus=num_cpus)
+    tree = load_tree(tree_fp, patient_zero)
+    # Plot and save basic tree
+    fig1 = visualize_tree(tree)
+    fig1.savefig(tree_dir/'basic_tree.pdf')
+    # PLOT AND SAVE INDEL TREES
+    colors = list(mcolors.TABLEAU_COLORS.keys())
     # identify deletions
     deletions = identify_deletions(msa_fp, patient_zero, min_del_len=1)
     # save deletion results to file
     deletions.to_csv(out_dir/'deletions.csv', index=False)
+    # plot Phylogenetic tree with top consensus deletions annotated
+    deletions = deletions.nlargest(len(colors), 'num_samples')
+    del2color = get_indel2color(deletions, colors)
+    sample_colors = get_sample2color(deletions, colors)
+    fig2 = visualize_tree(tree, sample_colors, 
+                   indels=deletions, colors=colors);
+    fig2.savefig(tree_dir/'deletion_cns_tree.pdf', dpi=300)
+    fig3 = visualize_tree(tree, sample_colors, 
+                          indels=deletions, colors=colors,
+                          isnv_info=True);
+    fig3.savefig(tree_dir/'deletion_isnv_tree.pdf', dpi=300)
     # identify insertions
     insertions = identify_insertions(msa_fp, patient_zero, min_ins_len=1)
     # save deletion results to file
     insertions.to_csv(out_dir/'insertions.csv', index=False)
+    # plot Phylogenetic tree with top consensus deletions annotated
+    insertions = insertions.nlargest(len(colors), 'num_samples')
+    del2color = get_indel2color(insertions, colors)
+    sample_colors = get_sample2color(insertions, colors)
+    fig4 = visualize_tree(tree, sample_colors, 
+                   indels=insertions, colors=colors);
+    fig4.savefig(tree_dir/'insertion_cns_tree.pdf', dpi=300)
+    fig5 = visualize_tree(tree, sample_colors, 
+                          indels=insertions, colors=colors,
+                          isnv_info=True);
+    fig5.savefig(tree_dir/'insertion_isnv_tree.pdf', dpi=300)
     # Data logging
     with open("{}/data_release.log".format(out_dir), 'w') as f:
         f.write(f'{num_samples_missing_coverage} samples are missing coverage information\n')
