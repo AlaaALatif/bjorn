@@ -125,28 +125,32 @@ def add_gene_column(df: pd.DataFrame) -> pd.DataFrame:
 def map_gene_to_pos(x):
     """helper function to infer the gene based on nucleotide position of SARS-CoV-2 genome"""
     pos = x
-    if pos >= 269 and pos <= 21555:
+    if pos <= 265:
+        return '5UTR'
+    elif pos > 265 and pos <= 21555:
         return 'ORF1ab'
-    elif pos >= 21564 and pos <= 25382:
+    elif pos > 21562 and pos <= 25384:
         return 'S'
-    elif pos >= 25410 and pos <= 26214:
+    elif pos > 25392 and pos <= 26220:
         return 'ORF3a'
-    elif pos >= 26247 and pos <= 26471:
+    elif pos > 26244 and pos <= 26472:
         return 'E'
-    elif pos >= 26523 and pos <= 27187:
+    elif pos > 26522 and pos <= 27191:
         return 'M'
-    elif pos >= 27203 and pos <= 27382:
+    elif pos > 27201 and pos <= 27387:
         return 'ORF6'
-    elif pos >= 27398 and pos <= 27754:
+    elif pos > 27393 and pos <= 27759:
         return 'ORF7a'
-    elif pos >= 27757 and pos <= 27887:
+    elif pos > 27755 and pos <= 27887:
         return 'ORF7b'
-    elif pos >= 27896 and pos <= 28257:
+    elif pos > 27893 and pos <= 28259:
         return 'ORF8'
-    elif pos >= 28289 and pos <= 29528:
+    elif pos > 28273 and pos <= 29533:
         return 'N'
-    elif pos >= 29564 and pos <= 29670:
+    elif pos > 29557 and pos <= 29674:
         return 'ORF10'
+    elif pos > 29674:
+        return '3UTR'
     return 'nan'
 
 
