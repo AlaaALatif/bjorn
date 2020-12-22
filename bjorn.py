@@ -58,7 +58,7 @@ def create_genbank_meta(df: pd.DataFrame, meta_cols: list) -> pd.DataFrame:
     genbank_meta.rename(columns={'Virus name': 'Sequence_ID', 'collection_date': 'collection-date',
                                  'Specimen source': 'isolation-source'}, inplace=True)
     genbank_meta.loc[genbank_meta['country']=='MEX', 'country'] = 'Mexico'
-    return genbank_meta[['Sequence_ID', 'isolate', 'country', 
+    return genbank_meta[['Sequence_ID', 'isolate', 'country',
                          'collection-date', 'host', 'isolation-source']]
 
 
@@ -74,13 +74,15 @@ def create_gisaid_meta(new_meta_df: pd.DataFrame, meta_cols: list):
     new_meta_df[meta_cols].to_csv(out_dir/'gisaid_metadata.csv', index=False)
     return f"GISAID metadata saved in {out_dir/'gisaid_metadata.csv'}"
 
-
 def get_ids(filepaths: list) -> list:
     "Utility function to get a unified sample ID format from the analysis file paths"
     ids = []
     for fp in filepaths:
         # query = fp.basename().split('-')
-        query = fp.basename().split('_')[0].split('-')
+        n = fp.basename()
+        if n[:6] != "SEARCH":
+            n = n[n.find("SEARCH"):]
+        query = n.split('_')[0].split('-')
         if len(query) > 1:
             ids.append(''.join(query[:2]))
         else:
@@ -88,9 +90,10 @@ def get_ids(filepaths: list) -> list:
             ids.append(fp[start_idx:start_idx+10])
     return ids
 
-
 def process_coverage_sample_ids(x):
     "Utility function to get a unified sample ID format from the coverage reports"
+    if x[:6] != "SEARCH":
+        x = x[x.find("SEARCH"):]
     query = x.split('/')
     if len(query) == 1:
         # query = fp.basename().split('_')[0].split('-')
@@ -99,14 +102,12 @@ def process_coverage_sample_ids(x):
         start_idx = x.find('SEARCH')
         return x[start_idx:start_idx+10] # SEARCHxxxx
 
-
 def compress_files(filepaths: list, destination='/home/al/tmp2/fa/samples.tar.gz'):
     "Utility function to compress list of files into a single .tar.gz file"
     with tarfile.open(destination, "w:gz") as tar:
         for f in filepaths:
             tar.add(f)
     return 0
-
 
 def transfer_files(filepaths: pd.DataFrame, destination: str, include_bams=False, ncpus = 1):
     "Utility function to copy consensus and BAM files of given samples from source to destination"
@@ -186,7 +187,7 @@ if __name__=="__main__":
                         type=str,
                         default="/home/gk/code/hCoV19/db/NC045512.fasta",
                         help="Reference to use")
-    
+
     parser.add_argument("-rn", "--reference-name",
                         type=str,
                         default="NC_045512.2",
@@ -221,7 +222,7 @@ if __name__=="__main__":
     # whether or not to include bam files in the release
     include_bams = args.include_bams
     # these are the columns to include in the metadata.csv output
-    
+
     # path to reference sequence (used later for MSA and tree construction)
     ref_path = Path(args.reference) if args.reference is not None else None
     patient_zero = args.reference_name
@@ -328,7 +329,7 @@ if __name__=="__main__":
               .drop_duplicates(subset=['sample_id'], keep='last'))
     # JOIN results with coverage info
     ans = (
-    pd.merge(final_result, cov_df, 
+    pd.merge(final_result, cov_df,
              on='sample_id', how='left')
       .assign(
         collection_date = lambda x: pd.to_datetime(x["Collection date"]).dt.strftime("%Y-%m-%d")
@@ -344,81 +345,82 @@ if __name__=="__main__":
     )
     ans['fasta_hdr'] = ans['Virus name']
     num_samples_missing_coverage = ans[ans['percent_coverage_cds'].isna()].shape[0]
-    # generate concatenated consensus sequences
-    msa_dir = out_dir/'msa'
-    if not Path.isdir(msa_dir):
-        Path.mkdir(msa_dir);
-    seqs_dir = Path(out_dir/'fa')
-    copy(ref_path, seqs_dir);
-    seqs_fp = concat_fasta(seqs_dir, msa_dir/out_dir.basename());
-    # load concatenated sequences
-    cns_seqs = SeqIO.parse(msa_dir/out_dir.basename()+'.fa', 'fasta')
-    cns_seqs = list(cns_seqs)
-    # generate files containing metadata for Github, GISAID, GenBank
-    create_github_meta(ans, released_samples_fpath, git_meta_cols)
-    create_gisaid_meta(ans, gisaid_meta_cols) 
-    assemble_genbank_release(cns_seqs, ans, genbank_meta_cols, out_dir/'genbank')
-    sra_dir = out_dir/'sra'
-    if not Path.isdir(sra_dir):
-        Path.mkdir(sra_dir);
-    input(f"\n Have you received the BioSample.txt files and placed them inside {sra_dir}? \n Press Enter to continue...")
-    create_sra_meta(ans, sra_dir)
     # compute number of samples below 90% coverage
     low_coverage_samples = ans[ans["percent_coverage_cds"] < 90]
-    # generate file containing deletions found
-    # generate multiple sequence alignment
-    msa_fp = align_fasta(seqs_fp, num_cpus=num_cpus);
-    # compute ML tree
-    tree_dir = out_dir/'trees'
-    if not Path.isdir(tree_dir):
-        Path.mkdir(tree_dir);
-    tree_fp = compute_tree(msa_fp, num_cpus=num_cpus)
-    tree = load_tree(tree_fp, patient_zero)
-    # Plot and save basic tree
-    fig1 = visualize_tree(tree)
-    fig1.savefig(tree_dir/'basic_tree.pdf')
-    # PLOT AND SAVE INDEL TREES
-    colors = list(mcolors.TABLEAU_COLORS.keys())
-    # path to new github metadata
-    meta_fp = out_dir/'metadata.csv'
-    # identify substitution mutations
-    subs = identify_replacements(msa_fp, 
+    # generate concatenated consensus sequences
+    if not dry_run:
+        msa_dir = out_dir/'msa'
+        if not Path.isdir(msa_dir):
+            Path.mkdir(msa_dir);
+        seqs_dir = Path(out_dir/'fa')
+        copy(ref_path, seqs_dir);
+        seqs_fp = concat_fasta(seqs_dir, msa_dir/out_dir.basename());
+        # load concatenated sequences
+        cns_seqs = SeqIO.parse(msa_dir/out_dir.basename()+'.fa', 'fasta')
+        cns_seqs = list(cns_seqs)
+        # generate files containing metadata for Github, GISAID, GenBank
+        create_github_meta(ans, released_samples_fpath, git_meta_cols)
+        create_gisaid_meta(ans, gisaid_meta_cols)
+        assemble_genbank_release(cns_seqs, ans, genbank_meta_cols, out_dir/'genbank')
+        sra_dir = out_dir/'sra'
+        if not Path.isdir(sra_dir):
+            Path.mkdir(sra_dir);
+        input(f"\n Have you received the BioSample.txt files and placed them inside {sra_dir}? \n Press Enter to continue...")
+        create_sra_meta(ans, sra_dir)
+        # generate file containing deletions found
+        # generate multiple sequence alignment
+        msa_fp = align_fasta(seqs_fp, num_cpus=num_cpus);
+        # compute ML tree
+        tree_dir = out_dir/'trees'
+        if not Path.isdir(tree_dir):
+            Path.mkdir(tree_dir);
+        tree_fp = compute_tree(msa_fp, num_cpus=num_cpus)
+        tree = load_tree(tree_fp, patient_zero)
+        # Plot and save basic tree
+        fig1 = visualize_tree(tree)
+        fig1.savefig(tree_dir/'basic_tree.pdf')
+        # PLOT AND SAVE INDEL TREES
+        colors = list(mcolors.TABLEAU_COLORS.keys())
+        # path to new github metadata
+        meta_fp = out_dir/'metadata.csv'
+        # identify substitution mutations
+        subs = identify_replacements(msa_fp,
                                  meta_fp,
                                  patient_zero)
-    subs.to_csv(out_dir/'replacements.csv', index=False)
-    # identify deletions
-    deletions = identify_deletions(msa_fp, 
+        subs.to_csv(out_dir/'replacements.csv', index=False)
+        # identify deletions
+        deletions = identify_deletions(msa_fp,
                                    meta_fp,
-                                   patient_zero, 
+                                   patient_zero,
                                    min_del_len=1)
-    # save deletion results to file
-    deletions.to_csv(out_dir/'deletions.csv', index=False)
-    # plot Phylogenetic tree with top consensus deletions annotated
-    deletions = deletions.nlargest(len(colors), 'num_samples')
-    del2color = get_indel2color(deletions, colors)
-    sample_colors = get_sample2color(deletions, colors)
-    fig2 = visualize_tree(tree, sample_colors, 
+        # save deletion results to file
+        deletions.to_csv(out_dir/'deletions.csv', index=False)
+        # plot Phylogenetic tree with top consensus deletions annotated
+        deletions = deletions.nlargest(len(colors), 'num_samples')
+        del2color = get_indel2color(deletions, colors)
+        sample_colors = get_sample2color(deletions, colors)
+        fig2 = visualize_tree(tree, sample_colors,
                    indels=deletions, colors=colors);
-    fig2.savefig(tree_dir/'deletion_cns_tree.pdf', dpi=300)
-    fig3 = visualize_tree(tree, sample_colors, 
+        fig2.savefig(tree_dir/'deletion_cns_tree.pdf', dpi=300)
+        fig3 = visualize_tree(tree, sample_colors,
                           indels=deletions, colors=colors,
                           isnv_info=True);
-    fig3.savefig(tree_dir/'deletion_isnv_tree.pdf', dpi=300)
-    # identify insertions
-    insertions = identify_insertions(msa_fp, patient_zero, min_ins_len=1)
-    # save deletion results to file
-    insertions.to_csv(out_dir/'insertions.csv', index=False)
-    # plot Phylogenetic tree with top consensus deletions annotated
-    insertions = insertions.nlargest(len(colors), 'num_samples')
-    del2color = get_indel2color(insertions, colors)
-    sample_colors = get_sample2color(insertions, colors)
-    fig4 = visualize_tree(tree, sample_colors, 
+        fig3.savefig(tree_dir/'deletion_isnv_tree.pdf', dpi=300)
+        # identify insertions
+        insertions = identify_insertions(msa_fp, patient_zero, min_ins_len=1)
+        # save deletion results to file
+        insertions.to_csv(out_dir/'insertions.csv', index=False)
+        # plot Phylogenetic tree with top consensus deletions annotated
+        insertions = insertions.nlargest(len(colors), 'num_samples')
+        del2color = get_indel2color(insertions, colors)
+        sample_colors = get_sample2color(insertions, colors)
+        fig4 = visualize_tree(tree, sample_colors,
                    indels=insertions, colors=colors);
-    fig4.savefig(tree_dir/'insertion_cns_tree.pdf', dpi=300)
-    fig5 = visualize_tree(tree, sample_colors, 
+        fig4.savefig(tree_dir/'insertion_cns_tree.pdf', dpi=300)
+        fig5 = visualize_tree(tree, sample_colors,
                           indels=insertions, colors=colors,
                           isnv_info=True);
-    fig5.savefig(tree_dir/'insertion_isnv_tree.pdf', dpi=300)
+        fig5.savefig(tree_dir/'insertion_isnv_tree.pdf', dpi=300)
     # Data logging
     with open("{}/data_release.log".format(out_dir), 'w') as f:
         f.write(f'{num_samples_missing_coverage} samples are missing coverage information\n')
@@ -426,5 +428,3 @@ if __name__=="__main__":
         f.write(f'{num_samples_missing_cons} samples were ignored because they were missing consensus sequence files\n')
         f.write(f'{num_samples_missing_bams} samples were ignored because they were missing BAM sequence files\n')
     print(f"Transfer Complete. All results saved in {out_dir}")
-
-
