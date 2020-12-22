@@ -14,7 +14,8 @@ from itertools import repeat
 import os
 from datetime import datetime as dt
 from bjorn_support import concat_fasta, align_fasta, compute_tree, map_gene_to_pos
-from onion_trees import identify_deletions, identify_insertions, load_tree, visualize_tree, get_indel2color, get_sample2color
+from mutations import identify_replacements, identify_deletions, identify_insertions
+from onion_trees import load_tree, visualize_tree, get_indel2color, get_sample2color
 
 
 ## FUNCTION DEFINTIONS
@@ -377,8 +378,18 @@ if __name__=="__main__":
     fig1.savefig(tree_dir/'basic_tree.pdf')
     # PLOT AND SAVE INDEL TREES
     colors = list(mcolors.TABLEAU_COLORS.keys())
+    # path to new github metadata
+    meta_fp = out_dir/'metadata.csv'
+    # identify substitution mutations
+    subs = identify_replacements(msa_fp, 
+                                 meta_fp,
+                                 patient_zero)
+    subs.to_csv(out_dir/'replacements.csv', index=False)
     # identify deletions
-    deletions = identify_deletions(msa_fp, patient_zero, min_del_len=1)
+    deletions = identify_deletions(msa_fp, 
+                                   meta_fp,
+                                   patient_zero, 
+                                   min_del_len=1)
     # save deletion results to file
     deletions.to_csv(out_dir/'deletions.csv', index=False)
     # plot Phylogenetic tree with top consensus deletions annotated
