@@ -163,7 +163,7 @@ def process_id(x):
 if __name__=="__main__":
     # Input Parameters
     # COLUMNS TO INCLUDE IN GITHUB METADATA
-    git_meta_cols = ["ID", "collection_date", "location", "percent_coverage_cds", "avg_depth", "authors", "originating_lab"]
+    git_meta_cols = ["ID", "collection_date", "location", "percent_coverage_cds", "avg_depth", "authors", "originating_lab", "fasta_hdr"]
     # COLUMNS TO INCLUDE IN GISAID METADATA
     gisaid_meta_cols = ['Submitter',
                    'FASTA filename', 'Virus name', 'Type', 'Passage details/history',
@@ -342,6 +342,7 @@ if __name__=="__main__":
         "Originating lab": "originating_lab"
     })
     )
+    ans['fasta_hdr'] = ans['Virus name']
     num_samples_missing_coverage = ans[ans['percent_coverage_cds'].isna()].shape[0]
     # generate concatenated consensus sequences
     msa_dir = out_dir/'msa'
