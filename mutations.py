@@ -30,8 +30,10 @@ def identify_replacements(input_fasta,
                           patient_zero: str='NC_045512.2', 
                           gene2pos: dict=GENE2POS):
     cns = AlignIO.read(input_fasta, 'fasta')
-    ref_seq = get_seq(cns, patient_zero)
-    seqs = get_seqs(cns, 0, 30000)
+    seqs, ref_seq = process_cns_seqs(cns, patient_zero,
+                                     start_pos=0, end_pos=30000)
+#     ref_seq = get_seq(cns, patient_zero)
+#     seqs = get_seqs(cns, 0, 30000)
     seqsdf = (pd.DataFrame(index=seqs.keys(), 
                            data=seqs.values(), 
                            columns=['sequence'])
