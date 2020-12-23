@@ -29,16 +29,20 @@ def identify_replacements(input_fasta,
                           meta_fp,
                           patient_zero: str='NC_045512.2', 
                           gene2pos: dict=GENE2POS):
+    print(f"Loading Alignment file at: {input_fasta}")
     cns = AlignIO.read(input_fasta, 'fasta')
+    print(f"Initial cleaning...")
     seqs, ref_seq = process_cns_seqs(cns, patient_zero,
                                      start_pos=0, end_pos=30000)
 #     ref_seq = get_seq(cns, patient_zero)
 #     seqs = get_seqs(cns, 0, 30000)
+    print(f"Creating a dataframe...")
     seqsdf = (pd.DataFrame(index=seqs.keys(), 
                            data=seqs.values(), 
                            columns=['sequence'])
                 .reset_index()
                 .rename(columns={'index': 'idx'}))
+    print(f"Identifying mutations...")
     # for each sample, identify list of substitutions (position:alt)
     seqsdf['replacements'] = seqsdf['sequence'].apply(find_replacements, args=(ref_seq,))
     # wide-to-long data manipulation
@@ -50,22 +54,28 @@ def identify_replacements(input_fasta,
        .apply(lambda x: int(x.split(':')[0])))
     # filter out non-substitutions
     seqsdf = seqsdf.loc[seqsdf['pos']!=-1]
+    print(f"Mapping Genes to mutations...")
     # identify gene of each substitution
     seqsdf['gene'] = seqsdf['pos'].apply(map_gene_to_pos)
     seqsdf = seqsdf.loc[~seqsdf['gene'].isna()]
     # filter our substitutions in non-gene positions
     seqsdf = seqsdf.loc[seqsdf['gene']!='nan']
+    print(f"Compute codon numbers...")
     # compute codon number of each substitution
     seqsdf['codon_num'] = seqsdf.apply(compute_codon_num, args=(GENE2POS,), axis=1)
+    print(f"Fetch reference codon...")
     # fetch the reference codon for each substitution
     seqsdf['ref_codon'] = seqsdf.apply(get_ref_codon, args=(ref_seq, GENE2POS), axis=1)
+    print(f"Fetch alternative codon...")
     # fetch the alternative codon for each substitution
     seqsdf['alt_codon'] = seqsdf.apply(get_alt_codon, args=(GENE2POS,), axis=1)
+    print(f"Map amino acids...")
     # fetch the reference and alternative amino acids
     seqsdf['ref_aa'] = seqsdf['ref_codon'].apply(get_aa)
     seqsdf['alt_aa'] = seqsdf['alt_codon'].apply(get_aa)
     # filter out substitutions with non-amino acid alternates (bad consensus calls)
     seqsdf = seqsdf.loc[seqsdf['alt_aa']!='nan']
+    print(f"Fuse with metadata...")
     # load and join metadata
     meta = pd.read_csv(meta_fp)
     seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
@@ -80,8 +90,8 @@ def identify_replacements(input_fasta,
      num_samples=('ID', 'nunique'),
      first_detected=('date', 'min'),
      last_detected=('date', 'max'),
-     locations=('location', uniq_locs),
-     location_counts=('location', loc_counts),
+#      locations=('location', uniq_locs),
+     location_counts=('location', lambda x: np.unique(x, return_counts=True)),
      samples=('ID', 'unique')
     )
     .reset_index())
@@ -180,7 +190,7 @@ def identify_deletions(input_filepath: str,
     # compute length of each deletion
     del_seqs['del_len'] = del_seqs['del_positions'].apply(len)
     # only consider deletions longer than 2nts
-    del_seqs = del_seqs[del_seqs['del_len'] > min_del_len]
+    del_seqs = del_seqs[del_seqs['del_len'] >= min_del_len]
     # fetch coordinates of each deletion
     del_seqs['relative_coords'] = del_seqs['del_positions'].apply(get_indel_coords)
     # group sample by the deletion they share
@@ -189,8 +199,8 @@ def identify_deletions(input_filepath: str,
                              num_samples=('idx', 'nunique'),
                              first_detected=('date', 'min'),
                              last_detected=('date', 'max'),
-                             locations=('location', uniq_locs),
-                             location_counts=('location', loc_counts))
+#                              locations=('location', uniq_locs),
+                             location_counts=('location', lambda x: np.unique(x, return_counts=True)))
                         .reset_index()
                         .sort_values('num_samples'))
     del_seqs['type'] = 'deletion'
@@ -215,7 +225,7 @@ def identify_deletions(input_filepath: str,
     return del_seqs[['type', 'gene', 'absolute_coords', 'del_len', 'pos', 
                      'ref_aa', 'codon_num', 'num_samples',
                      'first_detected', 'last_detected',
-                     'locations', 'location_counts', 'samples',
+                     'location_counts', 'samples',
                      'ref_codon', 'prev_5nts', 'next_5nts'
                      ]]
 
@@ -237,13 +247,28 @@ def identify_insertions(input_filepath: str, patient_zero: str, min_ins_len: int
                     .reset_index().rename(columns={'index': 'idx'}))
         seqsdf['seq_len'] = seqsdf['sequence'].str.len()
         seqsdf['ins_positions'] = seqsdf['sequence'].apply(find_insertions, args=(insert_positions,))
+#             # approximate the gene where each deletion was identified
+#         del_seqs['gene'] = del_seqs['pos'].apply(map_gene_to_pos)
+#         del_seqs = del_seqs.loc[~del_seqs['gene'].isna()]
+#         # filter our substitutions in non-gene positions
+#         del_seqs = del_seqs.loc[del_seqs['gene']!='nan']
+#         # compute codon number of each substitution
+#         del_seqs['codon_num'] = del_seqs.apply(compute_codon_num, args=(GENE2POS,), axis=1)
+#         # fetch the reference codon for each substitution
+#         del_seqs['ref_codon'] = del_seqs.apply(get_ref_codon, args=(ref_seq, GENE2POS), axis=1)
+#         # fetch the reference and alternative amino acids
+#         del_seqs['ref_aa'] = del_seqs['ref_codon'].apply(get_aa)
+#         # record the 5 nts before each deletion (based on reference seq)
+#         del_seqs['prev_5nts'] = del_seqs['absolute_coords'].apply(lambda x: ref_seq[int(x.split(':')[0])-5:int(x.split(':')[0])])
+#         # record the 5 nts after each deletion (based on reference seq)
+#         del_seqs['next_5nts'] = del_seqs['absolute_coords'].apply(lambda x: ref_seq[int(x.split(':')[1])+1:int(x.split(':')[1])+6])
         # sequences with one or more deletions
         ins_seqs = seqsdf.loc[seqsdf['ins_positions'].str.len() > 0]
         ins_seqs = ins_seqs.explode('ins_positions')
         # compute length of each deletion
         ins_seqs['ins_len'] = ins_seqs['ins_positions'].apply(len)
         # only consider deletions longer than 2nts
-        ins_seqs = ins_seqs[ins_seqs['ins_len'] > min_ins_len]
+        ins_seqs = ins_seqs[ins_seqs['ins_len'] >= min_ins_len]
         # fetch coordinates of each deletion
         ins_seqs['relative_coords'] = ins_seqs['ins_positions'].apply(get_indel_coords)
         # group sample by the deletion they share
@@ -259,9 +284,14 @@ def identify_insertions(input_filepath: str, patient_zero: str, min_ins_len: int
         ins_seqs['prev_5nts'] = ins_seqs['relative_coords'].apply(lambda x: ref_seq[int(x.split(':')[0])-5:int(x.split(':')[0])])
         # record the 5 nts after each deletion (based on reference seq)
         ins_seqs['next_5nts'] = ins_seqs['relative_coords'].apply(lambda x: ref_seq[int(x.split(':')[1])+1:int(x.split(':')[1])+6])
-        # approximate the gene where each deletion was identified
-        ins_seqs['gene'] = ins_seqs['absolute_coords'].apply(lambda x: int(x.split(':')[0])).apply(map_gene_to_pos)
-        return ins_seqs
+#         # approximate the gene where each deletion was identified
+#         ins_seqs['gene'] = ins_seqs['absolute_coords'].apply(lambda x: int(x.split(':')[0])).apply(map_gene_to_pos)
+        return ins_seqs#[['type', 'gene', 'absolute_coords', 'del_len', 'pos', 
+#                      'ref_aa', 'codon_num', 'num_samples',
+#                      'first_detected', 'last_detected',
+#                      'locations', 'location_counts', 'samples',
+#                      'ref_codon', 'prev_5nts', 'next_5nts'
+#                      ]]
     else:
         return pd.DataFrame()
 
