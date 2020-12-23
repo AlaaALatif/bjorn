@@ -134,12 +134,12 @@ def get_aa(codon: str):
 
 
 def uniq_locs(x):
-    return np.unique(x)
+    return list(np.unique(x))
 
 
 def loc_counts(x):
     _, counts = np.unique(x, return_counts=True)
-    return counts
+    return list(counts)
 
 
 def identify_deletions(input_filepath: str, 
