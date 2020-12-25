@@ -95,6 +95,8 @@ def identify_replacements(input_fasta,
      samples=('ID', 'unique')
     )
     .reset_index())
+    subs['locations'] = subs['location_counts'].apply(lambda x: list(x[0]))
+    subs['location_counts'] = subs['location_counts'].apply(lambda x: list(x[1]))
     # 1-based nucleotide position coordinate system
     subs['pos'] = subs['pos'] + 1
     return subs
@@ -203,6 +205,8 @@ def identify_deletions(input_filepath: str,
                              location_counts=('location', lambda x: np.unique(x, return_counts=True)))
                         .reset_index()
                         .sort_values('num_samples'))
+    del_seqs['locations'] = del_seqs['location_counts'].apply(lambda x: list(x[0]))
+    del_seqs['location_counts'] = del_seqs['location_counts'].apply(lambda x: list(x[1]))
     del_seqs['type'] = 'deletion'
     # adjust coordinates to account for the nts trimmed from beginning e.g. 265nts
     del_seqs['absolute_coords'] = del_seqs['relative_coords'].apply(adjust_coords, args=(start_pos+1,))
@@ -224,7 +228,7 @@ def identify_deletions(input_filepath: str,
     del_seqs['next_5nts'] = del_seqs['absolute_coords'].apply(lambda x: ref_seq[int(x.split(':')[1])+1:int(x.split(':')[1])+6])
     return del_seqs[['type', 'gene', 'absolute_coords', 'del_len', 'pos', 
                      'ref_aa', 'codon_num', 'num_samples',
-                     'first_detected', 'last_detected',
+                     'first_detected', 'last_detected', 'locations',
                      'location_counts', 'samples',
                      'ref_codon', 'prev_5nts', 'next_5nts'
                      ]]
