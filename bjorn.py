@@ -21,11 +21,12 @@ from onion_trees import load_tree, visualize_tree, get_indel2color, get_sample2c
 ## FUNCTION DEFINTIONS
 def create_sra_meta(df: pd.DataFrame, sra_dir: Path):
     biosample_paths = glob.glob(f"{sra_dir}/*.txt")
-    biosample_df = pd.concat((pd.read_csv(f, sep='\t') for f in biosample_paths))
-    biosample_df["sample_id"] = biosample_df["Sample Name"].apply(lambda x: "".join(x.split("-")[:2]))
-    bam_files = ans.loc[~ans['PATH_y'].isna()][['sample_id', 'PATH_y']].rename(columns={'PATH_y': 'file_name'})
-    sra_merged = pd.merge(biosample_df, bam_files, on="sample_id")
-    sra_merged[["Accession", "Sample Name", "file_name"]].to_csv(sra_dir/"sra_metadata.csv", index=False)
+    if biosample_paths:
+        biosample_df = pd.concat((pd.read_csv(f, sep='\t') for f in biosample_paths))
+        biosample_df["sample_id"] = biosample_df["Sample Name"].apply(lambda x: "".join(x.split("-")[:2]))
+        bam_files = ans.loc[~ans['PATH_y'].isna()][['sample_id', 'PATH_y']].rename(columns={'PATH_y': 'file_name'})
+        sra_merged = pd.merge(biosample_df, bam_files, on="sample_id")
+        sra_merged[["Accession", "Sample Name", "file_name"]].to_csv(sra_dir/"sra_metadata.csv", index=False)
     return f"SRA metadata saved in {sra_dir/'sra_metadata.csv'}"
 
 
@@ -299,7 +300,6 @@ if __name__=="__main__":
         # exclude any samples that do not have BAM data
         num_samples_missing_bams = sequence_results[sequence_results['PATH_y'].isna()].shape[0]
         sequence_results = sequence_results[~sequence_results['PATH_y'].isna()]
-    print(f"Preparing {sequence_results.shape[0]} samples for release")
     # samples missing consensus or BAM sequence files
     num_samples_missing_bams = sequence_results[sequence_results['PATH_y'].isna()].shape[0]
     num_samples_missing_cons = sequence_results[sequence_results['PATH_x'].isna()].shape[0]
@@ -313,10 +313,8 @@ if __name__=="__main__":
     # get IDs of samples that have already been released
     released_seqs = meta_df['sample_id'].unique()
     # filter out released samples from all the samples we got
-    final_result = sequence_results.copy()#[~sequence_results['sample_id'].isin(released_seqs)]
-    # Transfer files
-    if not dry_run:
-        transfer_files(final_result, out_dir, include_bams=include_bams, ncpus=num_cpus)
+    final_result = sequence_results[~sequence_results['sample_id'].isin(released_seqs)]
+    print(f"Preparing {final_result.shape[0]} samples for release")
     # ## Getting coverage information
     cov_filepaths = glob.glob("{}/**/trimmed_bams/illumina/reports/*.tsv".format(analysis_fpath))
     # get_ipython().getoutput("find {analysis_fpath} -type f -path '*trimmed_bams/illumina/reports*' -name '*.tsv'")
@@ -347,8 +345,12 @@ if __name__=="__main__":
     num_samples_missing_coverage = ans[ans['percent_coverage_cds'].isna()].shape[0]
     # compute number of samples below 90% coverage
     low_coverage_samples = ans[ans["percent_coverage_cds"] < 90]
+    # ignore samples below 90% coverage
+    ans = ans[ans["percent_coverage_cds"] >= 90]
     # generate concatenated consensus sequences
     if not dry_run:
+        # Transfer files
+        transfer_files(ans, out_dir, include_bams=include_bams, ncpus=num_cpus)
         msa_dir = out_dir/'msa'
         if not Path.isdir(msa_dir):
             Path.mkdir(msa_dir);
@@ -369,12 +371,16 @@ if __name__=="__main__":
         create_sra_meta(ans, sra_dir)
         # generate file containing deletions found
         # generate multiple sequence alignment
-        msa_fp = align_fasta(seqs_fp, num_cpus=num_cpus);
+        msa_fp = seqs_fp.split('.')[0] + '_aligned.fa'
+        if not Path.isfile(Path(msa_fp)):
+            msa_fp = align_fasta(seqs_fp, msa_fp, num_cpus=num_cpus);
         # compute ML tree
         tree_dir = out_dir/'trees'
         if not Path.isdir(tree_dir):
             Path.mkdir(tree_dir);
-        tree_fp = compute_tree(msa_fp, num_cpus=num_cpus)
+        tree_fp = msa_fp + '.treefile'
+        if not Path.isfile(Path(tree_fp)):
+            tree_fp = compute_tree(msa_fp, num_cpus=num_cpus)
         tree = load_tree(tree_fp, patient_zero)
         # Plot and save basic tree
         fig1 = visualize_tree(tree)
@@ -421,6 +427,8 @@ if __name__=="__main__":
                           indels=insertions, colors=colors,
                           isnv_info=True);
         fig5.savefig(tree_dir/'insertion_isnv_tree.pdf', dpi=300)
+    if not Path.isdir(out_dir):
+            Path.mkdir(out_dir);
     # Data logging
     with open("{}/data_release.log".format(out_dir), 'w') as f:
         f.write(f'{num_samples_missing_coverage} samples are missing coverage information\n')

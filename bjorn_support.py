@@ -57,10 +57,9 @@ def concat_fasta(in_dir, out_dir):
     return f"{out_dir}.fa"
 
 
-def align_fasta(fasta_filepath, num_cpus=8):
+def align_fasta(fasta_filepath, out_filepath, num_cpus=8):
     """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft.
     TODO: ALLOW USER TO INPUT CUSTOM COMMAND"""
-    out_filepath = fasta_filepath.split('.')[0] + '_aligned.fa'
     msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath} > {out_filepath}"
     subprocess.check_call(msa_cmd, shell=True)
     return out_filepath
