@@ -413,7 +413,7 @@ if __name__=="__main__":
                           isnv_info=True);
         fig3.savefig(tree_dir/'deletion_isnv_tree.pdf', dpi=300)
         # identify insertions
-        insertions = identify_insertions(msa_fp, patient_zero, min_ins_len=1)
+        insertions = identify_insertions(msa_fp, meta_fp, patient_zero, min_ins_len=1)
         # save deletion results to file
         insertions.to_csv(out_dir/'insertions.csv', index=False)
         # plot Phylogenetic tree with top consensus deletions annotated
