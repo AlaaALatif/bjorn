@@ -34,9 +34,35 @@ def identify_replacements(input_fasta,
     print(f"Initial cleaning...")
     seqs, ref_seq = process_cns_seqs(cns, patient_zero,
                                      start_pos=0, end_pos=30000)
-#     ref_seq = get_seq(cns, patient_zero)
-#     seqs = get_seqs(cns, 0, 30000)
     print(f"Creating a dataframe...")
+    seqsdf = identify_replacements_per_sample(seqs, 
+                                              meta_fp, 
+                                              ref_seq, 
+                                              gene2pos)
+    # aggregate on each substitutions, compute number of samples and other attributes
+    subs = (seqsdf.groupby(['gene', 'pos', 'ref_aa', 
+                            'codon_num', 'alt_aa'])
+    .agg(
+     num_samples=('ID', 'nunique'),
+     first_detected=('date', 'min'),
+     last_detected=('date', 'max'),
+#      locations=('location', uniq_locs),
+     location_counts=('location', 
+                      lambda x: np.unique(x, return_counts=True)),
+     samples=('ID', 'unique')
+    )
+    .reset_index())
+    subs['locations'] = subs['location_counts'].apply(lambda x: list(x[0]))
+    subs['location_counts'] = subs['location_counts'].apply(lambda x: list(x[1]))
+    # 1-based nucleotide position coordinate system
+    subs['pos'] = subs['pos'] + 1
+    return subs
+
+
+def identify_replacements_per_sample(seqs, 
+                                     meta_fp,
+                                     ref_seq,
+                                     gene2pos):
     seqsdf = (pd.DataFrame(index=seqs.keys(), 
                            data=seqs.values(), 
                            columns=['sequence'])
@@ -44,7 +70,8 @@ def identify_replacements(input_fasta,
                 .rename(columns={'index': 'idx'}))
     print(f"Identifying mutations...")
     # for each sample, identify list of substitutions (position:alt)
-    seqsdf['replacements'] = seqsdf['sequence'].apply(find_replacements, args=(ref_seq,))
+    seqsdf['replacements'] = seqsdf['sequence'].apply(find_replacements, 
+                                                      args=(ref_seq,))
     # wide-to-long data manipulation
     seqsdf = seqsdf.explode('replacements')
     # initialize position column
@@ -62,13 +89,13 @@ def identify_replacements(input_fasta,
     seqsdf = seqsdf.loc[seqsdf['gene']!='nan']
     print(f"Compute codon numbers...")
     # compute codon number of each substitution
-    seqsdf['codon_num'] = seqsdf.apply(compute_codon_num, args=(GENE2POS,), axis=1)
+    seqsdf['codon_num'] = seqsdf.apply(compute_codon_num, args=(gene2pos,), axis=1)
     print(f"Fetch reference codon...")
     # fetch the reference codon for each substitution
-    seqsdf['ref_codon'] = seqsdf.apply(get_ref_codon, args=(ref_seq, GENE2POS), axis=1)
+    seqsdf['ref_codon'] = seqsdf.apply(get_ref_codon, args=(ref_seq, gene2pos), axis=1)
     print(f"Fetch alternative codon...")
     # fetch the alternative codon for each substitution
-    seqsdf['alt_codon'] = seqsdf.apply(get_alt_codon, args=(GENE2POS,), axis=1)
+    seqsdf['alt_codon'] = seqsdf.apply(get_alt_codon, args=(gene2pos,), axis=1)
     print(f"Map amino acids...")
     # fetch the reference and alternative amino acids
     seqsdf['ref_aa'] = seqsdf['ref_codon'].apply(get_aa)
@@ -84,22 +111,7 @@ def identify_replacements(input_fasta,
                    & (seqsdf['collection_date']!='1900-01-00')]
     seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
     seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
-    # aggregate on each substitutions, compute number of samples and other attributes
-    subs = (seqsdf.groupby(['gene', 'pos', 'ref_aa', 'codon_num', 'alt_aa'])
-    .agg(
-     num_samples=('ID', 'nunique'),
-     first_detected=('date', 'min'),
-     last_detected=('date', 'max'),
-#      locations=('location', uniq_locs),
-     location_counts=('location', lambda x: np.unique(x, return_counts=True)),
-     samples=('ID', 'unique')
-    )
-    .reset_index())
-    subs['locations'] = subs['location_counts'].apply(lambda x: list(x[0]))
-    subs['location_counts'] = subs['location_counts'].apply(lambda x: list(x[1]))
-    # 1-based nucleotide position coordinate system
-    subs['pos'] = subs['pos'] + 1
-    return subs
+    return seqsdf
 
 
 def find_replacements(x, ref):
@@ -147,18 +159,10 @@ def get_aa(codon: str):
     return CODON2AA.get(codon, 'nan')
 
 
-def uniq_locs(x):
-    return list(np.unique(x))
-
-
-def loc_counts(x):
-    _, counts = np.unique(x, return_counts=True)
-    return list(counts)
-
-
 def identify_deletions(input_filepath: str, 
                        meta_fp: str,
-                       patient_zero: str='NC_045512.2', 
+                       patient_zero: str='NC_045512.2',
+                       gene2pos: dict=GENE2POS,
                        min_del_len: int=2,
                        start_pos: int=265, 
                        end_pos: int=29674) -> pd.DataFrame:
@@ -170,22 +174,7 @@ def identify_deletions(input_filepath: str,
     consensus_data = AlignIO.read(input_filepath, 'fasta')
     # prcess MSA to remove insertions and fix position coordinate systems
     seqs, ref_seq = process_cns_seqs(consensus_data, patient_zero, start_pos, end_pos)
-    # load into dataframe
-    seqsdf = (pd.DataFrame(index=seqs.keys(), data=seqs.values(), 
-                           columns=['sequence'])
-                .reset_index().rename(columns={'index': 'idx'}))
-    # load and join metadata
-    meta = pd.read_csv(meta_fp)
-    seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
-    # clean and process sample collection dates
-    seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
-                   & (seqsdf['collection_date']!='1900-01-00')]
-    seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
-    seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
-    # compute length of each sequence
-    seqsdf['seq_len'] = seqsdf['sequence'].str.len()
-    # identify deletion positions
-    seqsdf['del_positions'] = seqsdf['sequence'].apply(find_deletions)
+    seqsdf = identify_deletions_per_sample(seqs, meta_fp)
     # sequences with one or more deletions
     del_seqs = seqsdf.loc[seqsdf['del_positions'].str.len() > 0]
     del_seqs = del_seqs.explode('del_positions')
@@ -202,7 +191,8 @@ def identify_deletions(input_filepath: str,
                              first_detected=('date', 'min'),
                              last_detected=('date', 'max'),
 #                              locations=('location', uniq_locs),
-                             location_counts=('location', lambda x: np.unique(x, return_counts=True)))
+                             location_counts=('location', 
+                                              lambda x: np.unique(x, return_counts=True)))
                         .reset_index()
                         .sort_values('num_samples'))
     del_seqs['locations'] = del_seqs['location_counts'].apply(lambda x: list(x[0]))
@@ -217,9 +207,9 @@ def identify_deletions(input_filepath: str,
     # filter our substitutions in non-gene positions
     del_seqs = del_seqs.loc[del_seqs['gene']!='nan']
     # compute codon number of each substitution
-    del_seqs['codon_num'] = del_seqs.apply(compute_codon_num, args=(GENE2POS,), axis=1)
+    del_seqs['codon_num'] = del_seqs.apply(compute_codon_num, args=(gene2pos,), axis=1)
     # fetch the reference codon for each substitution
-    del_seqs['ref_codon'] = del_seqs.apply(get_ref_codon, args=(ref_seq, GENE2POS), axis=1)
+    del_seqs['ref_codon'] = del_seqs.apply(get_ref_codon, args=(ref_seq, gene2pos), axis=1)
     # fetch the reference and alternative amino acids
     del_seqs['ref_aa'] = del_seqs['ref_codon'].apply(get_aa)
     # record the 5 nts before each deletion (based on reference seq)
@@ -234,11 +224,33 @@ def identify_deletions(input_filepath: str,
                      ]]
 
 
+def identify_deletions_per_sample(seqs, meta_fp):
+    # load into dataframe
+    seqsdf = (pd.DataFrame(index=seqs.keys(), data=seqs.values(), 
+                           columns=['sequence'])
+                .reset_index().rename(columns={'index': 'idx'}))
+    # load and join metadata
+    meta = pd.read_csv(meta_fp)
+    seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
+    # clean and process sample collection dates
+    seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
+                   & (seqsdf['collection_date']!='1900-01-00')]
+    seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
+    seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
+    # compute length of each sequence
+    seqsdf['seq_len'] = seqsdf['sequence'].str.len()
+    # identify deletion positions
+    seqsdf['del_positions'] = seqsdf['sequence'].apply(find_deletions)
+    return seqsdf
+
+
 def identify_insertions(input_filepath: str,
                         meta_fp: str,
-                        patient_zero: str, 
+                        patient_zero: str,
+                        gene2pos: dict=GENE2POS,
                         min_ins_len: int=2,
-                        start_pos: int=265, end_pos: int=29674) -> pd.DataFrame:
+                        start_pos: int=265, 
+                        end_pos: int=29674) -> pd.DataFrame:
     """Identify insertions found in the aligned sequences. 
     input_filepath: path to fasta multiple sequence alignment
     patient_zero: name of the reference sequence in the alignment
@@ -250,18 +262,9 @@ def identify_insertions(input_filepath: str,
     insert_positions = identify_insertion_positions(ref_seq)
     if insert_positions:
         seqs = get_seqs(consensus_data)
-        seqsdf = (pd.DataFrame(index=seqs.keys(), data=seqs.values(), columns=['sequence'])
-                    .reset_index().rename(columns={'index': 'idx'}))
-        seqsdf['seq_len'] = seqsdf['sequence'].str.len()
-            # load and join metadata
-        meta = pd.read_csv(meta_fp)
-        seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
-        # clean and process sample collection dates
-        seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
-                       & (seqsdf['collection_date']!='1900-01-00')]
-        seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
-        seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
-        seqsdf['ins_positions'] = seqsdf['sequence'].apply(find_insertions, args=(insert_positions,))
+        seqsdf = identify_insertions_per_sample(seqs, 
+                                                meta_fp,
+                                                insert_positions)
         # sequences with one or more deletions
         ins_seqs = seqsdf.loc[seqsdf['ins_positions'].str.len() > 0]
         ins_seqs = ins_seqs.explode('ins_positions')
@@ -293,9 +296,9 @@ def identify_insertions(input_filepath: str,
         # filter our substitutions in non-gene positions
         ins_seqs = ins_seqs.loc[ins_seqs['gene']!='nan']
         # compute codon number of each substitution
-        ins_seqs['codon_num'] = ins_seqs.apply(compute_codon_num, args=(GENE2POS,), axis=1)
+        ins_seqs['codon_num'] = ins_seqs.apply(compute_codon_num, args=(gene2pos,), axis=1)
         # fetch the reference codon for each substitution
-        ins_seqs['ref_codon'] = ins_seqs.apply(get_ref_codon, args=(ref_seq, GENE2POS), axis=1)
+        ins_seqs['ref_codon'] = ins_seqs.apply(get_ref_codon, args=(ref_seq, gene2pos), axis=1)
         # fetch the reference and alternative amino acids
         ins_seqs['ref_aa'] = ins_seqs['ref_codon'].apply(get_aa)
         # record the 5 nts before each deletion (based on reference seq)
@@ -307,22 +310,35 @@ def identify_insertions(input_filepath: str,
         ins_seqs['prev_5nts'] = ins_seqs['relative_coords'].apply(lambda x: ref_seq[int(x.split(':')[0])-5:int(x.split(':')[0])])
         # record the 5 nts after each deletion (based on reference seq)
         ins_seqs['next_5nts'] = ins_seqs['relative_coords'].apply(lambda x: ref_seq[int(x.split(':')[1])+1:int(x.split(':')[1])+6])
-#         # approximate the gene where each deletion was identified
-#         ins_seqs['gene'] = ins_seqs['absolute_coords'].apply(lambda x: int(x.split(':')[0])).apply(map_gene_to_pos)
-        return ins_seqs[['type', 'gene', 'absolute_coords', 'ins_len', 'pos', 
-                     'ref_aa', 'codon_num', 'num_samples',
-                     'first_detected', 'last_detected', 'locations',
-                     'location_counts', 'samples',
-                     'ref_codon', 'prev_5nts', 'next_5nts'
-                     ]]#[['type', 'gene', 'absolute_coords', 'del_len', 'pos', 
-#                      'ref_aa', 'codon_num', 'num_samples',
-#                      'first_detected', 'last_detected',
-#                      'locations', 'location_counts', 'samples',
-#                      'ref_codon', 'prev_5nts', 'next_5nts'
-#                      ]]
+        return ins_seqs[['type', 'gene', 'absolute_coords', 
+                         'ins_len', 'pos', 
+                         'ref_aa', 'codon_num', 'num_samples',
+                         'first_detected', 'last_detected', 'locations',
+                         'location_counts', 'samples',
+                         'ref_codon', 'prev_5nts', 'next_5nts'
+                       ]]
     else:
         return pd.DataFrame()
 
+    
+def identify_insertions_per_sample(seqs, meta_fp, insert_positions):
+        seqsdf = (pd.DataFrame(index=seqs.keys(), 
+                               data=seqs.values(), 
+                               columns=['sequence'])
+                    .reset_index()
+                    .rename(columns={'index': 'idx'}))
+        seqsdf['seq_len'] = seqsdf['sequence'].str.len()
+        # load and join metadata
+        meta = pd.read_csv(meta_fp)
+        seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
+        # clean and process sample collection dates
+        seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
+                       & (seqsdf['collection_date']!='1900-01-00')]
+        seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
+        seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
+        seqsdf['ins_positions'] = seqsdf['sequence'].apply(find_insertions, args=(insert_positions,))
+        return seqsdf
+    
 
 def process_cns_seqs(cns_data: Align.MultipleSeqAlignment, patient_zero: str,
                      start_pos: int, end_pos: int) -> (dict, str):
