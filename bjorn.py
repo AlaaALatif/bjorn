@@ -431,8 +431,10 @@ if __name__=="__main__":
             Path.mkdir(out_dir);
     # Data logging
     with open("{}/data_release.log".format(out_dir), 'w') as f:
+        f.write(f"Prepared {final_result.shape[0]} samples for release")
         f.write(f'{num_samples_missing_coverage} samples are missing coverage information\n')
         f.write(f'{low_coverage_samples.shape[0]} samples were found to have coverage below 90%\n')
         f.write(f'{num_samples_missing_cons} samples were ignored because they were missing consensus sequence files\n')
+        f.write(f'{num_samples_missing_bams} samples were ignored because they were missing BAM sequence files\n')
         f.write(f'{num_samples_missing_bams} samples were ignored because they were missing BAM sequence files\n')
     print(f"Transfer Complete. All results saved in {out_dir}")
