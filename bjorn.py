@@ -134,6 +134,7 @@ def transfer_files(filepaths: pd.DataFrame, destination: str, include_bams=False
 
 def transfer_bam(out, bam_fp):
     n = os.path.join(out, os.path.basename(bam_fp))
+    if Path.isfile(Path(n)): return 0
     print("Transferring {} to {}".format(bam_fp, n))
     out = subprocess.Popen(["samtools", "view", "-b", "-F", "4", "-o", n, bam_fp],
                            stdout = subprocess.PIPE,
@@ -145,6 +146,7 @@ def transfer_bam(out, bam_fp):
 
 def transfer_cns_sequence(out, cons_fp, virus_name):
     n = os.path.join(out, os.path.basename(cons_fp))
+    if Path.isfile(Path(n)): return 0
     print("Transferring {} to {}".format(cons_fp, n))
     rec = SeqIO.read(cons_fp, format="fasta")
     new_cns_name = virus_name
