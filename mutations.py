@@ -40,7 +40,7 @@ def identify_replacements(input_fasta,
                                               ref_seq, 
                                               gene2pos)
     # aggregate on each substitutions, compute number of samples and other attributes
-    subs = (seqsdf.groupby(['gene', 'pos', 'ref_aa', 
+    subs = (seqsdf.groupby(['gene', 'ref_codon', 'alt_codon', 'pos', 'ref_aa', 
                             'codon_num', 'alt_aa'])
     .agg(
      num_samples=('ID', 'nunique'),
@@ -104,13 +104,14 @@ def identify_replacements_per_sample(seqs,
     seqsdf = seqsdf.loc[seqsdf['alt_aa']!='nan']
     print(f"Fuse with metadata...")
     # load and join metadata
-    meta = pd.read_csv(meta_fp)
-    seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
-    # clean and process sample collection dates
-    seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
-                   & (seqsdf['collection_date']!='1900-01-00')]
-    seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
-    seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
+    if meta_fp:
+        meta = pd.read_csv(meta_fp)
+        seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
+        # clean and process sample collection dates
+        seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
+                       & (seqsdf['collection_date']!='1900-01-00')]
+        seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
+        seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
     return seqsdf
 
 
@@ -174,20 +175,11 @@ def identify_deletions(input_filepath: str,
     consensus_data = AlignIO.read(input_filepath, 'fasta')
     # prcess MSA to remove insertions and fix position coordinate systems
     seqs, ref_seq = process_cns_seqs(consensus_data, patient_zero, start_pos, end_pos)
-    seqsdf = identify_deletions_per_sample(seqs, meta_fp)
-    # sequences with one or more deletions
-    del_seqs = seqsdf.loc[seqsdf['del_positions'].str.len() > 0]
-    del_seqs = del_seqs.explode('del_positions')
-    # compute length of each deletion
-    del_seqs['del_len'] = del_seqs['del_positions'].apply(len)
-    # only consider deletions longer than 2nts
-    del_seqs = del_seqs[del_seqs['del_len'] >= min_del_len]
-    # fetch coordinates of each deletion
-    del_seqs['relative_coords'] = del_seqs['del_positions'].apply(get_indel_coords)
+    seqsdf = identify_deletions_per_sample(seqs, meta_fp, min_del_len)
     # group sample by the deletion they share
-    del_seqs = (del_seqs.groupby(['relative_coords', 'del_len'])
-                        .agg(samples=('idx', 'unique'),
-                             num_samples=('idx', 'nunique'),
+    del_seqs = (seqsdf.groupby(['relative_coords', 'del_len'])
+                        .agg(samples=('ID', 'unique'),
+                             num_samples=('ID', 'nunique'),
                              first_detected=('date', 'min'),
                              last_detected=('date', 'max'),
 #                              locations=('location', uniq_locs),
@@ -224,23 +216,33 @@ def identify_deletions(input_filepath: str,
                      ]]
 
 
-def identify_deletions_per_sample(seqs, meta_fp):
+def identify_deletions_per_sample(seqs, meta_fp, min_del_len):
     # load into dataframe
     seqsdf = (pd.DataFrame(index=seqs.keys(), data=seqs.values(), 
                            columns=['sequence'])
                 .reset_index().rename(columns={'index': 'idx'}))
     # load and join metadata
-    meta = pd.read_csv(meta_fp)
-    seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
-    # clean and process sample collection dates
-    seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
-                   & (seqsdf['collection_date']!='1900-01-00')]
-    seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
-    seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
+    if meta_fp:
+        meta = pd.read_csv(meta_fp)
+        seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
+        # clean and process sample collection dates
+        seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
+                       & (seqsdf['collection_date']!='1900-01-00')]
+        seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
+        seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
     # compute length of each sequence
     seqsdf['seq_len'] = seqsdf['sequence'].str.len()
     # identify deletion positions
     seqsdf['del_positions'] = seqsdf['sequence'].apply(find_deletions)
+    # sequences with one or more deletions
+    seqsdf = seqsdf.loc[seqsdf['del_positions'].str.len() > 0]
+    seqsdf = seqsdf.explode('del_positions')
+    # compute length of each deletion
+    seqsdf['del_len'] = seqsdf['del_positions'].apply(len)
+    # only consider deletions longer than 2nts
+    seqsdf = seqsdf[seqsdf['del_len'] >= min_del_len]
+    # fetch coordinates of each deletion
+    seqsdf['relative_coords'] = seqsdf['del_positions'].apply(get_indel_coords)
     return seqsdf
 
 
@@ -276,8 +278,8 @@ def identify_insertions(input_filepath: str,
         ins_seqs['relative_coords'] = ins_seqs['ins_positions'].apply(get_indel_coords)
         # group sample by the deletion they share
         ins_seqs = (ins_seqs.groupby(['relative_coords', 'ins_len'])
-                            .agg(samples=('idx', 'unique'),       # list of sample IDs with the deletion
-                                 num_samples=('idx', 'nunique'),
+                            .agg(samples=('ID', 'unique'),       # list of sample IDs with the deletion
+                                 num_samples=('ID', 'nunique'),
                                  first_detected=('date', 'min'),
                                  last_detected=('date', 'max'),
     #                              locations=('location', uniq_locs),
