@@ -28,17 +28,15 @@ GENE2POS = {
 def identify_replacements(input_fasta, 
                           meta_fp,
                           patient_zero: str='NC_045512.2', 
-                          gene2pos: dict=GENE2POS):
-    print(f"Loading Alignment file at: {input_fasta}")
-    cns = AlignIO.read(input_fasta, 'fasta')
-    print(f"Initial cleaning...")
-    seqs, ref_seq = process_cns_seqs(cns, patient_zero,
-                                     start_pos=0, end_pos=30000)
+                          gene2pos: dict=GENE2POS,
+                          location: str=None):
     print(f"Creating a dataframe...")
-    seqsdf = identify_replacements_per_sample(seqs, 
-                                              meta_fp, 
-                                              ref_seq, 
-                                              gene2pos)
+    seqsdf, _ = identify_replacements_per_sample(input_fasta, 
+                                              meta_fp,  
+                                              gene2pos,
+                                              patient_zero)
+    if location:
+        seqsdf = seqsdf.loc[seqsdf['location'].str.contains(location)]
     # aggregate on each substitutions, compute number of samples and other attributes
     subs = (seqsdf.groupby(['gene', 'ref_codon', 'alt_codon', 'pos', 'ref_aa', 
                             'codon_num', 'alt_aa'])
@@ -59,10 +57,15 @@ def identify_replacements(input_fasta,
     return subs
 
 
-def identify_replacements_per_sample(seqs, 
+def identify_replacements_per_sample(input_fasta, 
                                      meta_fp,
-                                     ref_seq,
-                                     gene2pos):
+                                     gene2pos,
+                                     patient_zero: str='NC_045512.2'):
+    print(f"Loading Alignment file at: {input_fasta}")
+    cns = AlignIO.read(input_fasta, 'fasta')
+    print(f"Initial cleaning...")
+    seqs, ref_seq = process_cns_seqs(cns, patient_zero,
+                                     start_pos=0, end_pos=30000)
     seqsdf = (pd.DataFrame(index=seqs.keys(), 
                            data=seqs.values(), 
                            columns=['sequence'])
@@ -112,7 +115,7 @@ def identify_replacements_per_sample(seqs,
                        & (seqsdf['collection_date']!='1900-01-00')]
         seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
         seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
-    return seqsdf
+    return seqsdf, ref_seq
 
 
 def find_replacements(x, ref):
@@ -163,6 +166,7 @@ def get_aa(codon: str):
 def identify_deletions(input_filepath: str, 
                        meta_fp: str,
                        patient_zero: str='NC_045512.2',
+                       location: str=None,
                        gene2pos: dict=GENE2POS,
                        min_del_len: int=2,
                        start_pos: int=265, 
@@ -171,11 +175,15 @@ def identify_deletions(input_filepath: str,
     input_filepath: path to fasta multiple sequence alignment
     patient_zero: name of the reference sequence in the alignment
     min_del_len: minimum length of deletions to be identified"""
-    # read MSA file
-    consensus_data = AlignIO.read(input_filepath, 'fasta')
-    # prcess MSA to remove insertions and fix position coordinate systems
-    seqs, ref_seq = process_cns_seqs(consensus_data, patient_zero, start_pos, end_pos)
-    seqsdf = identify_deletions_per_sample(seqs, meta_fp, min_del_len)
+    seqsdf, ref_seq = identify_deletions_per_sample(input_filepath, 
+                                           meta_fp,  
+                                           patient_zero,
+                                           gene2pos,
+                                           min_del_len,
+                                           start_pos,
+                                           end_pos)
+    if location:
+        seqsdf = seqsdf.loc[seqsdf['location'].str.contains(location)]
     # group sample by the deletion they share
     del_seqs = (seqsdf.groupby(['relative_coords', 'del_len'])
                         .agg(samples=('ID', 'unique'),
@@ -216,7 +224,14 @@ def identify_deletions(input_filepath: str,
                      ]]
 
 
-def identify_deletions_per_sample(seqs, meta_fp, min_del_len):
+def identify_deletions_per_sample(input_filepath, meta_fp, 
+                                  patient_zero, gene2pos,
+                                  min_del_len=1, start_pos=265,
+                                  end_pos=29674):
+    # read MSA file
+    consensus_data = AlignIO.read(input_filepath, 'fasta')
+    # prcess MSA to remove insertions and fix position coordinate systems
+    seqs, ref_seq = process_cns_seqs(consensus_data, patient_zero, start_pos, end_pos)
     # load into dataframe
     seqsdf = (pd.DataFrame(index=seqs.keys(), data=seqs.values(), 
                            columns=['sequence'])
@@ -243,7 +258,7 @@ def identify_deletions_per_sample(seqs, meta_fp, min_del_len):
     seqsdf = seqsdf[seqsdf['del_len'] >= min_del_len]
     # fetch coordinates of each deletion
     seqsdf['relative_coords'] = seqsdf['del_positions'].apply(get_indel_coords)
-    return seqsdf
+    return seqsdf, ref_seq
 
 
 def identify_insertions(input_filepath: str,
