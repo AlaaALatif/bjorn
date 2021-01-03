@@ -1,3 +1,4 @@
+import sys
 import glob
 import subprocess
 import path
@@ -69,8 +70,22 @@ def align_fasta_reference(fasta_filepath, num_cpus=8, ref_fp: str=''):
     """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft"""
     out_filepath = fasta_filepath.split('.')[0] + '_aligned.fa'
     msa_cmd = f"mafft --auto --thread {num_cpus} --keeplength --addfragments {fasta_filepath} {ref_fp} > {out_filepath}"
-    subprocess.check_call(msa_cmd, shell=True)
+    run_command(msa_cmd)
     return out_filepath
+
+
+def run_command(cmd):
+    ## run it ##
+    p = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE)
+
+    ## But do not wait till netstat finish, start displaying output immediately ##
+    while True:
+        out = p.stderr.read(1)
+        if out == b'' and p.poll() != None:
+            break
+        if out != b'':
+            sys.stdout.write(out.decode('utf-8'))
+            sys.stdout.flush()
 
 
 def compute_tree(msa_filepath, num_cpus=8):
