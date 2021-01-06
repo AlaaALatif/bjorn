@@ -29,16 +29,43 @@ def identify_replacements(input_fasta,
                           meta_fp,
                           patient_zero: str='NC_045512.2', 
                           gene2pos: dict=GENE2POS,
-                          location: str=None):
+                          location: str=None,
+                          data_src: str='alab'):
     print(f"Creating a dataframe...")
     seqsdf, _ = identify_replacements_per_sample(input_fasta, 
-                                              meta_fp,  
-                                              gene2pos,
-                                              patient_zero)
+                                                 meta_fp,  
+                                                 gene2pos,
+                                                 data_src=data_src,
+                                                 patient_zero=patient_zero)
     if location:
         seqsdf = seqsdf.loc[seqsdf['location'].str.contains(location)]
     # aggregate on each substitutions, compute number of samples and other attributes
-    subs = (seqsdf.groupby(['gene', 'ref_codon', 'alt_codon', 'pos', 'ref_aa', 
+    if data_src=='gisaid':
+        subs = (seqsdf.groupby(['gene', 'pos', 'ref_aa', 'codon_num', 'alt_aa'])
+                .agg(
+                 num_samples=('idx', 'nunique'),
+                 first_detected=('date', 'min'),
+                 last_detected=('date', 'max'),
+                 num_locations=('location', 'nunique'),
+                 location_counts=('location', 
+                                  lambda x: np.unique(x, 
+                                                      return_counts=True)),
+                 num_divisions=('division', 'nunique'),
+                 division_counts=('division', 
+                                  lambda x: np.unique(x, 
+                                                      return_counts=True)),
+                 num_countries=('country', 'nunique'),
+                 country_counts=('country', 
+                                 lambda x: np.unique(x, 
+                                                     return_counts=True))
+                )
+                .reset_index())
+        subs['divisions'] = subs['division_counts'].apply(lambda x: list(x[0]))
+        subs['division_counts'] = subs['division_counts'].apply(lambda x: list(x[1]))
+        subs['countries'] = subs['country_counts'].apply(lambda x: list(x[0]))
+        subs['country_counts'] = subs['country_counts'].apply(lambda x: list(x[1]))
+    else:
+        subs = (seqsdf.groupby(['gene', 'ref_codon', 'alt_codon', 'pos', 'ref_aa', 
                             'codon_num', 'alt_aa'])
     .agg(
      num_samples=('ID', 'nunique'),
@@ -60,6 +87,7 @@ def identify_replacements(input_fasta,
 def identify_replacements_per_sample(input_fasta, 
                                      meta_fp,
                                      gene2pos,
+                                     data_src,
                                      patient_zero: str='NC_045512.2'):
     print(f"Loading Alignment file at: {input_fasta}")
     cns = AlignIO.read(input_fasta, 'fasta')
@@ -108,13 +136,23 @@ def identify_replacements_per_sample(input_fasta,
     print(f"Fuse with metadata...")
     # load and join metadata
     if meta_fp:
-        meta = pd.read_csv(meta_fp)
-        seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
-        # clean and process sample collection dates
-        seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
-                       & (seqsdf['collection_date']!='1900-01-00')]
-        seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
-        seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
+        if data_src=='alab':
+            meta = pd.read_csv(meta_fp)
+            seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
+            # clean and process sample collection dates
+            seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
+                           & (seqsdf['collection_date']!='1900-01-00')]
+            seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
+            seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
+        elif data_src=='gisaid':
+            meta = pd.read_csv(meta_fp, sep='\t')
+            seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
+            seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
+            seqsdf['month'] = seqsdf['date'].dt.month
+            seqsdf.loc[seqsdf['location'].isna(), 'location'] = 'unk'
+            seqsdf = seqsdf[seqsdf['host']=='Human']
+        else:
+            raise ValueError(f"user-specified data source {data_src} not recognized. Aborting.")
     return seqsdf, ref_seq
 
 
@@ -170,7 +208,8 @@ def identify_deletions(input_filepath: str,
                        gene2pos: dict=GENE2POS,
                        min_del_len: int=2,
                        start_pos: int=265, 
-                       end_pos: int=29674) -> pd.DataFrame:
+                       end_pos: int=29674,
+                       data_src: str='alab') -> pd.DataFrame:
     """Identify deletions found in the aligned sequences. 
     input_filepath: path to fasta multiple sequence alignment
     patient_zero: name of the reference sequence in the alignment
@@ -181,11 +220,37 @@ def identify_deletions(input_filepath: str,
                                            gene2pos,
                                            min_del_len,
                                            start_pos,
-                                           end_pos)
+                                           end_pos,
+                                           data_src)
     if location:
         seqsdf = seqsdf.loc[seqsdf['location'].str.contains(location)]
     # group sample by the deletion they share
-    del_seqs = (seqsdf.groupby(['relative_coords', 'del_len'])
+    if data_src=='gisaid':
+        del_seqs = (seqsdf.groupby(['relative_coords', 'del_len'])
+                .agg(
+                 num_samples=('idx', 'nunique'),
+                 first_detected=('date', 'min'),
+                 last_detected=('date', 'max'),
+                 num_locations=('location', 'nunique'),
+                 location_counts=('location', 
+                                  lambda x: np.unique(x, 
+                                                      return_counts=True)),
+                 num_divisions=('division', 'nunique'),
+                 division_counts=('division', 
+                                  lambda x: np.unique(x, 
+                                                      return_counts=True)),
+                 num_countries=('country', 'nunique'),
+                 country_counts=('country', 
+                                 lambda x: np.unique(x, 
+                                                     return_counts=True))
+                )
+                .reset_index())
+        del_seqs['divisions'] = del_seqs['division_counts'].apply(lambda x: list(x[0]))
+        del_seqs['division_counts'] = del_seqs['division_counts'].apply(lambda x: list(x[1]))
+        del_seqs['countries'] = del_seqs['country_counts'].apply(lambda x: list(x[0]))
+        del_seqs['country_counts'] = del_seqs['country_counts'].apply(lambda x: list(x[1]))
+    else:
+        del_seqs = (seqsdf.groupby(['relative_coords', 'del_len'])
                         .agg(samples=('ID', 'unique'),
                              num_samples=('ID', 'nunique'),
                              first_detected=('date', 'min'),
@@ -216,18 +281,21 @@ def identify_deletions(input_filepath: str,
     del_seqs['prev_5nts'] = del_seqs['absolute_coords'].apply(lambda x: ref_seq[int(x.split(':')[0])-5:int(x.split(':')[0])])
     # record the 5 nts after each deletion (based on reference seq)
     del_seqs['next_5nts'] = del_seqs['absolute_coords'].apply(lambda x: ref_seq[int(x.split(':')[1])+1:int(x.split(':')[1])+6])
-    return del_seqs[['type', 'gene', 'absolute_coords', 'del_len', 'pos', 
+    if data_src=='alab':
+        cols = ['type', 'gene', 'absolute_coords', 'del_len', 'pos', 
                      'ref_aa', 'codon_num', 'num_samples',
                      'first_detected', 'last_detected', 'locations',
                      'location_counts', 'samples',
-                     'ref_codon', 'prev_5nts', 'next_5nts'
-                     ]]
+                     'ref_codon', 'prev_5nts', 'next_5nts']
+    elif data_src=='gisaid':
+        cols = del_seqs.columns
+    return del_seqs[cols]
 
 
 def identify_deletions_per_sample(input_filepath, meta_fp, 
                                   patient_zero, gene2pos,
                                   min_del_len=1, start_pos=265,
-                                  end_pos=29674):
+                                  end_pos=29674, data_src='alab'):
     # read MSA file
     consensus_data = AlignIO.read(input_filepath, 'fasta')
     # prcess MSA to remove insertions and fix position coordinate systems
@@ -238,13 +306,23 @@ def identify_deletions_per_sample(input_filepath, meta_fp,
                 .reset_index().rename(columns={'index': 'idx'}))
     # load and join metadata
     if meta_fp:
-        meta = pd.read_csv(meta_fp)
-        seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
-        # clean and process sample collection dates
-        seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
-                       & (seqsdf['collection_date']!='1900-01-00')]
-        seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
-        seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
+        if data_src=='alab':
+            meta = pd.read_csv(meta_fp)
+            seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='fasta_hdr')
+            # clean and process sample collection dates
+            seqsdf = seqsdf.loc[(seqsdf['collection_date']!='Unknown') 
+                           & (seqsdf['collection_date']!='1900-01-00')]
+            seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
+            seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
+        elif data_src=='gisaid':
+            meta = pd.read_csv(meta_fp, sep='\t')
+            seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
+            seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
+            seqsdf['month'] = seqsdf['date'].dt.month
+            seqsdf.loc[seqsdf['location'].isna(), 'location'] = 'unk'
+            seqsdf = seqsdf[seqsdf['host']=='Human']
+        else:
+            raise ValueError(f"user-specified data source {data_src} not recognized. Aborting.")
     # compute length of each sequence
     seqsdf['seq_len'] = seqsdf['sequence'].str.len()
     # identify deletion positions

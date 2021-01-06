@@ -1,7 +1,7 @@
 import sys
 import glob
 import subprocess
-import path
+from path import Path
 import numpy as np
 import pandas as pd
 
@@ -58,27 +58,11 @@ def concat_fasta(in_dir, out_dir):
     return f"{out_dir}.fa"
 
 
-def align_fasta(fasta_filepath, out_filepath, num_cpus=8):
-    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft.
-    TODO: ALLOW USER TO INPUT CUSTOM COMMAND"""
-    msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath} > {out_filepath}"
-    subprocess.check_call(msa_cmd, shell=True)
-    return out_filepath
-
-
-def align_fasta_reference(fasta_filepath, num_cpus=8, ref_fp: str=''):
-    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft"""
-    out_filepath = fasta_filepath.split('.')[0] + '_aligned.fa'
-    msa_cmd = f"mafft --auto --thread {num_cpus} --keeplength --addfragments {fasta_filepath} {ref_fp} > {out_filepath}"
-    run_command(msa_cmd)
-    return out_filepath
-
-
 def run_command(cmd):
-    ## run it ##
+    "helper function used to run bash commands"
+    # run it
     p = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE)
-
-    ## But do not wait till netstat finish, start displaying output immediately ##
+    # But do not wait till netstat finish, start displaying output immediately
     while True:
         out = p.stderr.read(1)
         if out == b'' and p.poll() != None:
@@ -88,11 +72,26 @@ def run_command(cmd):
             sys.stdout.flush()
 
 
+def align_fasta(fasta_filepath, out_filepath, num_cpus=8):
+    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft.
+    TODO: ALLOW USER TO INPUT CUSTOM COMMAND"""
+    msa_cmd = f"mafft --auto --thread {num_cpus} {fasta_filepath} > {out_filepath}"
+    subprocess.check_call(msa_cmd, shell=True)
+    return out_filepath
+
+
+def align_fasta_reference(fasta_filepath, out_filepath, ref_fp: str, num_cpus=8):
+    """Generate Multiple Sequence Alignment of concatenated sequences in input fasta file using mafft"""
+    msa_cmd = f"mafft --auto --thread {num_cpus} --keeplength --addfragments {fasta_filepath} {ref_fp} > {out_filepath}"
+    run_command(msa_cmd)
+    return out_filepath
+
+
 def compute_tree(msa_filepath, num_cpus=8):
     """Compute ML tree of aligned sequences in input fasta using iqtree"""
     out_filepath = msa_filepath + '.treefile'
-    tree_cmd = f"iqtree -s {msa_filepath} -nt 6 -m HKY -czb -fast"
-    subprocess.check_call(tree_cmd, shell=True)
+    tree_cmd = f"iqtree -s {msa_filepath} -nt {num_cpus} -m HKY -czb -fast"
+    run_command(tree_cmd)
     return out_filepath
 
 
