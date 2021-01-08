@@ -1,9 +1,10 @@
+import os
 import math
 import re
 import numpy as np
 import pandas as pd
 import more_itertools as mit
-from Bio import SeqIO, AlignIO, Phylo, Align
+from Bio import Seq, SeqIO, AlignIO, Phylo, Align
 from bjorn_support import map_gene_to_pos
 
 
@@ -31,8 +32,11 @@ def identify_replacements(input_fasta,
                           gene2pos: dict=GENE2POS,
                           location: str=None,
                           data_src: str='alab'):
+    print(f"Pre-processing aligned sequences")
+    processed_fasta = f'{os.path.splitext(input_fasta)[0]}_padded.fasta'
+    processed_fasta = pad_aligned_sequences(input_fasta, processed_fasta)
     print(f"Creating a dataframe...")
-    seqsdf, _ = identify_replacements_per_sample(input_fasta, 
+    seqsdf, _ = identify_replacements_per_sample(processed_fasta, 
                                                  meta_fp,  
                                                  gene2pos,
                                                  data_src=data_src,
@@ -145,12 +149,16 @@ def identify_replacements_per_sample(input_fasta,
             seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
             seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
         elif data_src=='gisaid':
-            meta = pd.read_csv(meta_fp, sep='\t')
-            seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
-            seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
-            seqsdf['month'] = seqsdf['date'].dt.month
+#             meta = pd.read_csv(meta_fp, sep='\t')
+#             # filter out improper collection dates
+#             meta['tmp'] = meta['date'].str.split('-')
+#             meta = meta[meta['tmp'].str.len()==3]
+#             seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
+#             seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
+#             seqsdf['month'] = seqsdf['date'].dt.month
             seqsdf.loc[seqsdf['location'].isna(), 'location'] = 'unk'
             seqsdf = seqsdf[seqsdf['host']=='Human']
+            
         else:
             raise ValueError(f"user-specified data source {data_src} not recognized. Aborting.")
     return seqsdf, ref_seq
@@ -201,7 +209,7 @@ def get_aa(codon: str):
     return CODON2AA.get(codon, 'nan')
 
 
-def identify_deletions(input_filepath: str, 
+def identify_deletions(input_fasta: str, 
                        meta_fp: str,
                        patient_zero: str='NC_045512.2',
                        location: str=None,
@@ -214,7 +222,10 @@ def identify_deletions(input_filepath: str,
     input_filepath: path to fasta multiple sequence alignment
     patient_zero: name of the reference sequence in the alignment
     min_del_len: minimum length of deletions to be identified"""
-    seqsdf, ref_seq = identify_deletions_per_sample(input_filepath, 
+    print(f"Pre-processing aligned sequences")
+    processed_fasta = f'{os.path.splitext(input_fasta)[0]}_padded.fasta'
+    processed_fasta = pad_aligned_sequences(input_fasta, processed_fasta)
+    seqsdf, ref_seq = identify_deletions_per_sample(processed_fasta, 
                                            meta_fp,  
                                            patient_zero,
                                            gene2pos,
@@ -316,6 +327,9 @@ def identify_deletions_per_sample(input_filepath, meta_fp,
             seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
         elif data_src=='gisaid':
             meta = pd.read_csv(meta_fp, sep='\t')
+            # filter out improper collection dates
+            meta['tmp'] = meta['date'].str.split('-')
+            meta = meta[meta['tmp'].str.len()>=2]
             seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
             seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
             seqsdf['month'] = seqsdf['date'].dt.month
@@ -433,6 +447,25 @@ def identify_insertions_per_sample(seqs, meta_fp, insert_positions):
         seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
         seqsdf['ins_positions'] = seqsdf['sequence'].apply(find_insertions, args=(insert_positions,))
         return seqsdf
+
+
+def pad_aligned_sequences(in_fp, out_fp):
+    """helper function that ensures all sequences in the given alignment have equal length using padding"""
+    records = SeqIO.parse(in_fp, 'fasta')
+    records = list(records) # make a copy, otherwise our generator
+                            # is exhausted after calculating maxlen
+    maxlen = max(len(record.seq) for record in records)
+
+    # pad sequences so that they all have the same length
+    for record in records:
+        if len(record.seq) != maxlen:
+            sequence = str(record.seq).ljust(maxlen, '.')
+            record.seq = Seq.Seq(sequence)
+    assert all(len(record.seq) == maxlen for record in records)
+    # write to temporary file and do alignment
+    with open(out_fp, 'w') as f:
+        SeqIO.write(records, f, 'fasta')
+    return out_fp
     
 
 def process_cns_seqs(cns_data: Align.MultipleSeqAlignment, patient_zero: str,
@@ -483,7 +516,7 @@ def find_insertions(x, insert_positions: list):
 def get_seq(all_seqs: Align.MultipleSeqAlignment, sample_name: str) -> str:
     """Fetches the aligned sequence of a specific sample name"""
     for rec in all_seqs:
-        if rec.name == sample_name:
+        if sample_name in rec.id:
             seq = rec.seq
             break
     return str(seq)
@@ -496,6 +529,7 @@ def identify_insertion_positions(ref_seq: str) -> list:
 
 def remove_insertions(seq: str, positions: list) -> str:
     for i, pos in enumerate(positions):
+#         seqs = seqs[:, :pos-i] + align[:, pos+1-i]
         seq = seq[:pos-i] + seq[pos+1-i:]
     return seq
 
