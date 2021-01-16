@@ -6,24 +6,7 @@ import pandas as pd
 import more_itertools as mit
 from Bio import Seq, SeqIO, AlignIO, Phylo, Align
 from bjorn_support import map_gene_to_pos
-
-
-
-GENE2POS = {
-            '5UTR': {'start': 0, 'end': 265},
-            'ORF1ab': {'start': 265, 'end': 21555},
-            'S': {'start': 21562, 'end': 25384},
-            'ORF3a': {'start': 25392, 'end': 26220},
-            'E': {'start': 26244, 'end': 26472},
-            'M': {'start': 26522, 'end': 27191},
-            'ORF6': {'start': 27201, 'end': 27387},
-            'ORF7a': {'start': 27393, 'end': 27759},
-            'ORF7b': {'start': 27755, 'end': 27887},
-            'ORF8': {'start': 27893, 'end': 28259},
-            'N': {'start': 28273, 'end': 29533},
-            'ORF10': {'start': 29557, 'end': 29674},
-            '3UTR': {'start': 29674, 'end': 29902}
-           }
+from data import GENE2POS
 
 
 def identify_replacements(input_fasta, 
@@ -32,11 +15,8 @@ def identify_replacements(input_fasta,
                           gene2pos: dict=GENE2POS,
                           location: str=None,
                           data_src: str='alab'):
-    print(f"Pre-processing aligned sequences")
-    processed_fasta = f'{os.path.splitext(input_fasta)[0]}_padded.fasta'
-    processed_fasta = pad_aligned_sequences(input_fasta, processed_fasta)
     print(f"Creating a dataframe...")
-    seqsdf, _ = identify_replacements_per_sample(processed_fasta, 
+    seqsdf, _ = identify_replacements_per_sample(input_fasta, 
                                                  meta_fp,  
                                                  gene2pos,
                                                  data_src=data_src,
@@ -64,28 +44,38 @@ def identify_replacements(input_fasta,
                                                      return_counts=True))
                 )
                 .reset_index())
-        subs['divisions'] = subs['division_counts'].apply(lambda x: list(x[0]))
-        subs['division_counts'] = subs['division_counts'].apply(lambda x: list(x[1]))
-        subs['countries'] = subs['country_counts'].apply(lambda x: list(x[0]))
-        subs['country_counts'] = subs['country_counts'].apply(lambda x: list(x[1]))
+        subs['divisions'] = subs['division_counts'].apply(lambda x: x[0]).apply(lambda x: ','.join(x))
+        # subs['divisions'] = subs['divisions'].apply(process_list).astype(str)
+        subs['division_counts'] = subs['division_counts'].apply(lambda x: x[1]).apply(lambda x: ','.join(map(str, x)))
+        # subs['division_counts'] = subs['division_counts'].apply(process_list).astype(str)
+        subs['countries'] = subs['country_counts'].apply(lambda x: x[0]).apply(lambda x: ','.join(x))#.astype(str)
+        # subs['countries'] = subs['countries'].apply(process_list).astype(str)
+        subs['country_counts'] = subs['country_counts'].apply(lambda x: x[1]).apply(lambda x: ','.join(map(str, x)))
+        # subs['country_counts'] = subs['country_counts'].apply(process_list).astype(str)
     else:
         subs = (seqsdf.groupby(['gene', 'ref_codon', 'alt_codon', 'pos', 'ref_aa', 
                             'codon_num', 'alt_aa'])
-    .agg(
-     num_samples=('ID', 'nunique'),
-     first_detected=('date', 'min'),
-     last_detected=('date', 'max'),
-#      locations=('location', uniq_locs),
-     location_counts=('location', 
-                      lambda x: np.unique(x, return_counts=True)),
-     samples=('ID', 'unique')
-    )
-    .reset_index())
-    subs['locations'] = subs['location_counts'].apply(lambda x: list(x[0]))
-    subs['location_counts'] = subs['location_counts'].apply(lambda x: list(x[1]))
+                    .agg(
+                    num_samples=('idx', 'nunique'),
+                    # first_detected=('date', 'min'),
+                    # last_detected=('date', 'max'),
+                #      locations=('location', uniq_locs),
+                    # location_counts=('location', 
+                    #                 lambda x: np.unique(x, return_counts=True)),
+                    samples=('idx', 'unique')
+                    )
+                    .reset_index())
+        subs['samples'] = subs['samples'].apply(process_samples).astype(str)
+    # subs['locations'] = subs['location_counts'].apply(lambda x: x[0]).apply(lambda x: ','.join(x))
+    # subs['location_counts'] = subs['location_counts'].apply(lambda x: x[1]).apply(lambda x: ','.join(map(str, x)))
     # 1-based nucleotide position coordinate system
     subs['pos'] = subs['pos'] + 1
     return subs
+
+
+def process_samples(x):
+    x = ','.join(x)
+    return x
 
 
 def identify_replacements_per_sample(input_fasta, 
@@ -103,6 +93,7 @@ def identify_replacements_per_sample(input_fasta,
                            columns=['sequence'])
                 .reset_index()
                 .rename(columns={'index': 'idx'}))
+    # seqsdf = seqsdf.sample(100)
     print(f"Identifying mutations...")
     # for each sample, identify list of substitutions (position:alt)
     seqsdf['replacements'] = seqsdf['sequence'].apply(find_replacements, 
@@ -137,6 +128,8 @@ def identify_replacements_per_sample(input_fasta,
     seqsdf['alt_aa'] = seqsdf['alt_codon'].apply(get_aa)
     # filter out substitutions with non-amino acid alternates (bad consensus calls)
     seqsdf = seqsdf.loc[seqsdf['alt_aa']!='nan']
+    # drop the actual sequences to save mem
+    seqsdf.drop(columns=['sequence'], inplace=True)
     print(f"Fuse with metadata...")
     # load and join metadata
     if meta_fp:
@@ -149,16 +142,15 @@ def identify_replacements_per_sample(input_fasta,
             seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
             seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
         elif data_src=='gisaid':
-#             meta = pd.read_csv(meta_fp, sep='\t')
-#             # filter out improper collection dates
-#             meta['tmp'] = meta['date'].str.split('-')
-#             meta = meta[meta['tmp'].str.len()==3]
-#             seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
-#             seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
-#             seqsdf['month'] = seqsdf['date'].dt.month
+            meta = pd.read_csv(meta_fp, sep='\t', compression='gzip')
+            # filter out improper collection dates
+            meta['tmp'] = meta['date'].str.split('-')
+            meta = meta[meta['tmp'].str.len()>=3]
+            seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
+            seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
+            seqsdf['month'] = seqsdf['date'].dt.month
             seqsdf.loc[seqsdf['location'].isna(), 'location'] = 'unk'
             seqsdf = seqsdf[seqsdf['host']=='Human']
-            
         else:
             raise ValueError(f"user-specified data source {data_src} not recognized. Aborting.")
     return seqsdf, ref_seq
@@ -222,10 +214,7 @@ def identify_deletions(input_fasta: str,
     input_filepath: path to fasta multiple sequence alignment
     patient_zero: name of the reference sequence in the alignment
     min_del_len: minimum length of deletions to be identified"""
-    print(f"Pre-processing aligned sequences")
-    processed_fasta = f'{os.path.splitext(input_fasta)[0]}_padded.fasta'
-    processed_fasta = pad_aligned_sequences(input_fasta, processed_fasta)
-    seqsdf, ref_seq = identify_deletions_per_sample(processed_fasta, 
+    seqsdf, ref_seq = identify_deletions_per_sample(input_fasta, 
                                            meta_fp,  
                                            patient_zero,
                                            gene2pos,
@@ -240,39 +229,40 @@ def identify_deletions(input_fasta: str,
         del_seqs = (seqsdf.groupby(['relative_coords', 'del_len'])
                 .agg(
                  num_samples=('idx', 'nunique'),
-                 first_detected=('date', 'min'),
-                 last_detected=('date', 'max'),
-                 num_locations=('location', 'nunique'),
-                 location_counts=('location', 
-                                  lambda x: np.unique(x, 
-                                                      return_counts=True)),
-                 num_divisions=('division', 'nunique'),
-                 division_counts=('division', 
-                                  lambda x: np.unique(x, 
-                                                      return_counts=True)),
-                 num_countries=('country', 'nunique'),
-                 country_counts=('country', 
-                                 lambda x: np.unique(x, 
-                                                     return_counts=True))
+                #  first_detected=('date', 'min'),
+                #  last_detected=('date', 'max'),
+                #  num_locations=('location', 'nunique'),
+                #  location_counts=('location', 
+                #                   lambda x: np.unique(x, 
+                #                                       return_counts=True)),
+                #  num_divisions=('division', 'nunique'),
+                #  division_counts=('division', 
+                #                   lambda x: np.unique(x, 
+                #                                       return_counts=True)),
+                #  num_countries=('country', 'nunique'),
+                #  country_counts=('country', 
+                #                  lambda x: np.unique(x, 
+                #                                      return_counts=True))
                 )
                 .reset_index())
-        del_seqs['divisions'] = del_seqs['division_counts'].apply(lambda x: list(x[0]))
-        del_seqs['division_counts'] = del_seqs['division_counts'].apply(lambda x: list(x[1]))
-        del_seqs['countries'] = del_seqs['country_counts'].apply(lambda x: list(x[0]))
-        del_seqs['country_counts'] = del_seqs['country_counts'].apply(lambda x: list(x[1]))
+        # del_seqs['divisions'] = del_seqs['division_counts'].apply(lambda x: x[0]).apply(lambda x: ','.join(x))
+        # del_seqs['division_counts'] = del_seqs['division_counts'].apply(lambda x: x[1]).apply(lambda x: ','.join(map(str, x)))
+        # del_seqs['countries'] = del_seqs['country_counts'].apply(lambda x: x[0]).apply(lambda x: ','.join(x))
+        # del_seqs['country_counts'] = del_seqs['country_counts'].apply(lambda x: x[1]).apply(lambda x: ','.join(map(str, x)))
     else:
         del_seqs = (seqsdf.groupby(['relative_coords', 'del_len'])
-                        .agg(samples=('ID', 'unique'),
-                             num_samples=('ID', 'nunique'),
-                             first_detected=('date', 'min'),
-                             last_detected=('date', 'max'),
-#                              locations=('location', uniq_locs),
-                             location_counts=('location', 
-                                              lambda x: np.unique(x, return_counts=True)))
+                        .agg(samples=('idx', 'unique'),
+                             num_samples=('idx', 'nunique'),
+                            #  first_detected=('date', 'min'),
+                            #  last_detected=('date', 'max'),
+                            #  location_counts=('location', 
+                            #                   lambda x: np.unique(x, return_counts=True))
+                            )
                         .reset_index()
                         .sort_values('num_samples'))
-    del_seqs['locations'] = del_seqs['location_counts'].apply(lambda x: list(x[0]))
-    del_seqs['location_counts'] = del_seqs['location_counts'].apply(lambda x: list(x[1]))
+        del_seqs['samples'] = del_seqs['samples'].apply(process_samples).astype(str)
+    # del_seqs['locations'] = del_seqs['location_counts'].apply(lambda x: x[0]).apply(lambda x: ','.join(x))
+    # del_seqs['location_counts'] = del_seqs['location_counts'].apply(lambda x: x[1]).apply(lambda x: ','.join(map(str, x)))
     del_seqs['type'] = 'deletion'
     # adjust coordinates to account for the nts trimmed from beginning e.g. 265nts
     del_seqs['absolute_coords'] = del_seqs['relative_coords'].apply(adjust_coords, args=(start_pos+1,))
@@ -300,7 +290,7 @@ def identify_deletions(input_fasta: str,
                      'ref_codon', 'prev_5nts', 'next_5nts']
     elif data_src=='gisaid':
         cols = del_seqs.columns
-    return del_seqs[cols]
+    return del_seqs#[cols]
 
 
 def identify_deletions_per_sample(input_filepath, meta_fp, 
@@ -326,10 +316,10 @@ def identify_deletions_per_sample(input_filepath, meta_fp,
             seqsdf.loc[seqsdf['collection_date'].str.contains('/'), 'collection_date'] = seqsdf['collection_date'].apply(lambda x: x.split('/')[0])
             seqsdf['date'] = pd.to_datetime(seqsdf['collection_date'])
         elif data_src=='gisaid':
-            meta = pd.read_csv(meta_fp, sep='\t')
+            meta = pd.read_csv(meta_fp, sep='\t', compression='gzip')
             # filter out improper collection dates
             meta['tmp'] = meta['date'].str.split('-')
-            meta = meta[meta['tmp'].str.len()>=2]
+            meta = meta[meta['tmp'].str.len()>=3]
             seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
             seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
             seqsdf['month'] = seqsdf['date'].dt.month

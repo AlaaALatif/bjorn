@@ -4,6 +4,17 @@ import subprocess
 from path import Path
 import numpy as np
 import pandas as pd
+from Bio import Seq, SeqIO, AlignIO, Phylo, Align
+
+def fetch_seqs(seqs_filepath, out_fp, sample_idxs: list, is_aligned=False):
+    if is_aligned:
+        cns = AlignIO.read(seqs_filepath, 'fasta')
+        my_cns = Align.MultipleSeqAlignment([rec for rec in cns if rec.id in sample_idxs])
+        return AlignIO.write(my_cns, out_fp, 'fasta')
+    else:
+        cns = SeqIO.parse(seqs_filepath, 'fasta')
+        my_cns = [rec for rec in cns if rec.id in sample_idxs]
+        return SeqIO.write(my_cns, out_fp, 'fasta')
 
 
 def get_filepaths(analysis_path: str, data_fmt: str, sample_ids: list=[], 
@@ -20,7 +31,7 @@ def get_filepaths(analysis_path: str, data_fmt: str, sample_ids: list=[],
             except:
                 continue
     else:
-        fs = glob.glob(f"{analysis_path}/*.fa*")
+        fs = glob.glob(f"{analysis_path}/*{data_type}*/*{tech}*/*.{data_fmt}")
         for f in fs:
             try:
                 sample_id = f.split('/')[-1].split('_')[0].split('-')[1]
@@ -87,10 +98,13 @@ def align_fasta_reference(fasta_filepath, out_filepath, ref_fp: str, num_cpus=8)
     return out_filepath
 
 
-def compute_tree(msa_filepath, num_cpus=8):
+def compute_tree(msa_filepath, num_cpus=8, redo=False):
     """Compute ML tree of aligned sequences in input fasta using iqtree"""
     out_filepath = msa_filepath + '.treefile'
-    tree_cmd = f"iqtree -s {msa_filepath} -nt {num_cpus} -m HKY -czb -fast"
+    if redo:
+        tree_cmd = f"iqtree -redo -s {msa_filepath} -nt {num_cpus} -m HKY -czb -fast"
+    else:
+        tree_cmd = f"iqtree -s {msa_filepath} -nt {num_cpus} -m HKY -czb -fast"
     run_command(tree_cmd)
     return out_filepath
 
