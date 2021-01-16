@@ -81,6 +81,7 @@ def generate_voc_data(feature, values, input_params):
     counties_fp = input_params['counties_fp']
     patient_zero = input_params['patient_zero']
     strain_data = get_strain_data(gisaid_data, feature, values)
+    # TEXT results
     results = get_text_results(strain_data, feature, values)
     results['strain'] = input_params['strain']
     results['date'] = input_params['date']

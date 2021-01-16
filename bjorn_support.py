@@ -6,6 +6,32 @@ import numpy as np
 import pandas as pd
 from Bio import Seq, SeqIO, AlignIO, Phylo, Align
 
+
+def integrate_gisaid_meta(old_meta_fp, xtra_fp, msa_fp, rename_cols, drop_cols):
+    xtra = pd.read_csv(xtra_fp, sep='\t')
+    xtra.rename(columns=rename_cols, inplace=True)
+    # xtra.columns
+    xtra['country'] = xtra['Location'].apply(lambda x: x.split('/')[1].strip())
+    xtra['division'] = xtra['Location'].apply(lambda x: x.split('/')[2].strip())
+    xtra['location'] = xtra['Location'].apply(clean_locs)
+    xtra['strain'] = xtra['strain'].apply(lambda x: '/'.join(x.split('/')[1:]))
+    sois = xtra['strain'].unique().tolist()
+    sois = dict.fromkeys(sois)
+    meta = pd.read_csv(old_meta_fp, sep='\t', compression='gzip')
+    # meta.columns
+    meta = meta.loc[~((meta['country'].str.contains('USA'))&(meta['pangolin_lineage']=='B.1.1.7'))]
+    meta = pd.concat([meta, xtra])
+    meta.drop(columns=drop_cols, inplace=True)
+    meta.loc[meta['country']=='USA', 'country'] = 'United States of America'
+    return meta
+
+
+def clean_locs(x):
+    if len(x.split('/')) > 3:
+        return x.split('/')[3].strip()
+    return 'unk'
+
+
 def fetch_seqs(seqs_filepath, out_fp, sample_idxs: list, is_aligned=False):
     if is_aligned:
         cns = AlignIO.read(seqs_filepath, 'fasta')

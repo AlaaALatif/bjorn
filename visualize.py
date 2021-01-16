@@ -84,7 +84,7 @@ def us_time(gisaid_data, feature, values, strain='B117', country='USA'):
     results = (gisaid_data.loc[(gisaid_data[feature].isin(values)) & 
                              (gisaid_data['country']=='United States of America')]
                           .drop_duplicates(subset=['date', 'strain']))
-    results['purpose_of_sequencing'] = '?'
+    results['purpose_of_sequencing'] = 'S'
     random = results[results['purpose_of_sequencing']=='?']
     biased = results[results['purpose_of_sequencing']!='?']
     b117_us_time = (random.groupby('date')
@@ -176,7 +176,7 @@ def ca_time(gisaid_data, feature, values, strain='B117', state='California'):
     results = (gisaid_data.loc[(gisaid_data[feature].isin(values)) & 
                              (gisaid_data['division']==state)]
                           .drop_duplicates(subset=['date', 'strain']))
-    results['purpose_of_sequencing'] = '?'
+    results['purpose_of_sequencing'] = 'S'
     random = results[results['purpose_of_sequencing']=='?']
     biased = results[results['purpose_of_sequencing']!='?']
     b117_ca_time = (random.groupby('date')
