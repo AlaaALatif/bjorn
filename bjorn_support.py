@@ -180,8 +180,10 @@ def map_gene_to_pos(x):
     pos = x
     if pos <= 265:
         return '5UTR'
-    elif pos > 265 and pos <= 21555:
-        return 'ORF1ab'
+    elif pos > 265 and pos <= 13466:
+        return 'ORF1a'
+    elif pos > 13466 and pos <= 21555:
+        return 'ORF1b'
     elif pos > 21562 and pos <= 25384:
         return 'S'
     elif pos > 25392 and pos <= 26220:

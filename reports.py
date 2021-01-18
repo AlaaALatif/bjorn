@@ -16,6 +16,9 @@ def generate_voc_html(feature: str, values: list, results: dict, template_name: 
     world_time = plotly.offline.plot(results['world_time'], include_plotlyjs=False, output_type='div')
     us_time = plotly.offline.plot(results['us_time'], include_plotlyjs=False, output_type='div')
     ca_time = plotly.offline.plot(results['ca_time'], include_plotlyjs=False, output_type='div')
+    world_rtime = plotly.offline.plot(results['world_rtime'], include_plotlyjs=False, output_type='div')
+    us_rtime = plotly.offline.plot(results['us_rtime'], include_plotlyjs=False, output_type='div')
+    ca_rtime = plotly.offline.plot(results['ca_rtime'], include_plotlyjs=False, output_type='div')
     world_map = plotly.offline.plot(results['world_map'],
                                     include_plotlyjs=False, output_type='div')
     state_map = plotly.offline.plot(results['state_map'], include_plotlyjs=False, output_type='div')
@@ -48,7 +51,9 @@ def generate_voc_html(feature: str, values: list, results: dict, template_name: 
                                   num_lineages=num_lineages, strain=strain, 
                                   mutations=mutations,
                                   date=date, world_time=world_time, us_time=us_time,
-                                  ca_time=ca_time, world_map=world_map, 
+                                  ca_time=ca_time, world_rtime=world_rtime, 
+                                  ca_rtime=ca_rtime, us_rtime=us_rtime,
+                                  world_map=world_map, 
                                   state_map=state_map, county_map=county_map,
                                 #   genetic_distance_plot=genetic_distance_plot, 
                                   strain_distance_plot=strain_distance_plot,
@@ -61,10 +66,16 @@ def generate_voc_html(feature: str, values: list, results: dict, template_name: 
 
 
 def generate_voc_data(feature, values, input_params):
-    
-    if feature == 'mutations':
+    results = pd.DataFrame()
+    res = None
+    if feature == 'mutation':
         gisaid_data = pd.read_csv(input_params['gisaid_data_fp'], compression='gzip')
-        gisaid_data['mutation'] = gisaid_data['gene'] + ':' + gisaid_data['ref_aa'] + gisaid_data['codon_num'].astype(str) + gisaid_data['alt_aa']
+        if len(values) > 1:
+            res = (gisaid_data.groupby(['date', 'country', 'division', 
+                                        'purpose_of_sequencing',
+                                        'location', 'pangolin_lineage', 'strain'])
+                       .agg(mutations=('mutation', 'unique')).reset_index())
+            res['is_vui'] = res['mutations'].apply(bv.is_vui, args=(set(values),))
     else:
         gisaid_data = pd.read_csv(input_params['gisaid_meta_fp'], sep='\t', compression='gzip')
         gisaid_data.loc[gisaid_data['location'].isna(), 'location'] = 'unk'
@@ -86,29 +97,35 @@ def generate_voc_data(feature, values, input_params):
     results['strain'] = input_params['strain']
     results['date'] = input_params['date']
     results['sampling_fig'] = bv.load_img(sampling_img_fp)
-    results['state_map'], _, _ = bv.map_by_state(gisaid_data, feature, values, states_fp, strain=results['strain'])
-    results['world_map'], _, _ = bv.map_by_country(gisaid_data, feature, values, countries_fp, strain=results['strain'])
+    results['state_map'], _, _ = bv.map_by_state(gisaid_data, feature, values, states_fp, res, strain=results['strain'])
+    results['world_map'], _, _ = bv.map_by_country(gisaid_data, feature, values, countries_fp, res, strain=results['strain'])
     results['county_map'], _, _ = bv.map_by_county(gisaid_data, feature, values, counties_fp, states_fp, strain=results['strain'])
     # filter out records with bad dates
     gisaid_data['tmp'] = gisaid_data['date'].str.split('-')
     gisaid_data = gisaid_data[gisaid_data['tmp'].str.len()>=3]
     gisaid_data['date'] = pd.to_datetime(gisaid_data['date'], errors='coerce')
+    # res['tmp'] = res['date'].str.split('-')
+    # res = res[res['tmp'].str.len()>=3]
+    # res['date'] = pd.to_datetime(res['date'], errors='coerce')
     gisaid_data = gisaid_data[~((gisaid_data['pangolin_lineage']=='B.1.1.7')
                             &(gisaid_data['date'].dt.month==1)) & 
                           (gisaid_data['date'].dt.year>=2020) &
                           ~(gisaid_data['date']=='2020-01-01 00:00:00')]
-    results['world_time'] = bv.world_time(gisaid_data, feature, values, strain=results['strain'])
-    results['us_time'] = bv.us_time(gisaid_data, feature, values, strain=results['strain'])
-    results['ca_time'] = bv.ca_time(gisaid_data, feature, values, strain=results['strain'])
+    results['world_time'] = bv.world_time(gisaid_data, feature, values, res, strain=results['strain'])
+    results['us_time'] = bv.us_time(gisaid_data, feature, values, res, strain=results['strain'])
+    results['ca_time'] = bv.ca_time(gisaid_data, feature, values, res, strain=results['strain'])
+    results['world_rtime'] = bv.world_time_relative(gisaid_data, feature, values, res, strain=results['strain'])
+    results['us_rtime'] = bv.us_time_relative(gisaid_data, feature, values, res, strain=results['strain'])
+    results['ca_rtime'] = bv.ca_time_relative(gisaid_data, feature, values, res, strain=results['strain']) 
     # results['genetic_distance_plot'] = bv.genetic_distance(tree_fp, meta_fp, patient_zero)
     if 'B.1.1.7' in values:
         results['strain_distance_plot'], _ = bv.b117_genetic_distance(gisaid_data, msa_fp, b117_meta, 
                                                                     patient_zero=patient_zero, sample_sz=sample_sz)
     else:
         results['strain_distance_plot'] = bv.strain_nt_distance(gisaid_data, feature, values, strain=results['strain'], sample_sz=sample_sz)
-    if feature=='mutations' and len(values)==1:
+    if feature=='mutation' and len(values)==1:
         results['mutation_diversity'] = bv.mutation_diversity(gisaid_data, values[0], strain=results['strain'])
-    elif feature=='mutations':
+    elif feature=='mutation':
         results['mutation_diversity'] = bv.mutation_diversity_multi(gisaid_data, values, strain=results['strain'])
     # results['aa_distance_plot'] = bv.aa_distance(subs_fp, meta_fp)
     # results['s_aa_distance_plot'] = bv.s_aa_distance(subs_fp, meta_fp)
@@ -127,22 +144,28 @@ def get_text_results(strain_data: pd.DataFrame, feature, values):
     results['us_num'] = strain_data.loc[(strain_data['country']=='United States of America'), 'strain'].unique().shape[0]
     results['num_states'] = strain_data.loc[(strain_data['country']=='United States of America'), 'division'].unique().shape[0]
     results['ca_num'] = strain_data.loc[(strain_data['division']=='California'), 'strain'].unique().shape[0]
-    if feature=='mutations':
-        results['num_lineages'] = f"""The {''.join(values)} mutation(s) has been detected in {num_lineages} lineage(s).
-                                      Please see supplementary section for more information on diversity"""
+    if feature=='mutation':
+        results['num_lineages'] = f"""The {', '.join(values)} mutation(s) has been detected in {num_lineages} lineage(s) (see fig 1.1B)."""
         results['mutations'] = ', '.join(values)
     return results
 
 
 def get_strain_data(data, feature, values):
     if len(values)==1:
-        strain_data = data.loc[data[feature].isin(values)]
-    elif feature=='mutations':
+        strain_data = data.loc[data[feature]==values[0]]
+    elif feature=='mutation':
         strain_data = (data.groupby(['date', 'pangolin_lineage', 
                                      'country', 'division', 'strain'])
                            .agg(mutations=('mutation', 'unique'))
                            .reset_index())
         strain_data['is_vui'] = strain_data['mutations'].apply(bv.is_vui, args=(set(values),)) 
+        strain_data = strain_data.loc[strain_data['is_vui']==True]
+    else:
+        strain_data = (data.groupby(['date', 'country', 
+                                     'division', 'strain'])
+                           .agg(lineages=('pangolin_lineage', 'unique'))
+                           .reset_index())
+        strain_data['is_vui'] = strain_data['lineages'].apply(bv.is_vui, args=(set(values),)) 
         strain_data = strain_data.loc[strain_data['is_vui']==True]
     return strain_data
 

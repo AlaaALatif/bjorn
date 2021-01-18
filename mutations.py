@@ -82,7 +82,8 @@ def identify_replacements_per_sample(input_fasta,
                                      meta_fp,
                                      gene2pos,
                                      data_src,
-                                     patient_zero: str='NC_045512.2'):
+                                     patient_zero: str='NC_045512.2',
+                                     test: bool=False):
     print(f"Loading Alignment file at: {input_fasta}")
     cns = AlignIO.read(input_fasta, 'fasta')
     print(f"Initial cleaning...")
@@ -93,7 +94,8 @@ def identify_replacements_per_sample(input_fasta,
                            columns=['sequence'])
                 .reset_index()
                 .rename(columns={'index': 'idx'}))
-    # seqsdf = seqsdf.sample(100)
+    if test:
+        seqsdf = seqsdf.sample(100)
     print(f"Identifying mutations...")
     # for each sample, identify list of substitutions (position:alt)
     seqsdf['replacements'] = seqsdf['sequence'].apply(find_replacements, 
@@ -144,11 +146,11 @@ def identify_replacements_per_sample(input_fasta,
         elif data_src=='gisaid':
             meta = pd.read_csv(meta_fp, sep='\t', compression='gzip')
             # filter out improper collection dates
-            meta['tmp'] = meta['date'].str.split('-')
-            meta = meta[meta['tmp'].str.len()>=3]
+            # meta['tmp'] = meta['date'].str.split('-')
+            # meta = meta[meta['tmp'].str.len()>=3]
             seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
-            seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
-            seqsdf['month'] = seqsdf['date'].dt.month
+            # seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
+            # seqsdf['month'] = seqsdf['date'].dt.month
             seqsdf.loc[seqsdf['location'].isna(), 'location'] = 'unk'
             seqsdf = seqsdf[seqsdf['host']=='Human']
         else:

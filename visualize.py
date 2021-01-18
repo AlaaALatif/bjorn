@@ -37,9 +37,82 @@ def load_img(img_filepath):
     return fig
 
 
-def world_time(gisaid_data, feature, values, strain='B117'):
-    results = (gisaid_data.loc[(gisaid_data[feature].isin(values))]
-                          .drop_duplicates(subset=['date', 'strain']))
+def world_time_relative(data, feature, values, res, strain='B117', vocs=['B.1.1.7', 'B.1.1.70']):
+    if len(values)==1:
+        data.loc[:, 'weekday'] = data['date'].dt.weekday
+        data.loc[:, 'date'] = data['date'] - data['weekday'] * dt.timedelta(days=1)
+        results = (data.loc[(data[feature]==values[0])]
+                            .drop_duplicates(subset=['date', 'strain']))
+        total_samples = (data[(~data['pangolin_lineage'].isin(vocs))]
+                        .groupby('date')
+                        .agg(total_samples=('strain', 'nunique')))
+    else:
+        res = res.copy()
+        res.loc[:, 'tmp'] = res['date'].str.split('-')
+        res = res[res['tmp'].str.len()>=3]
+        res.loc[:, 'date'] = pd.to_datetime(res['date'], errors='coerce')
+        res.loc[:, 'weekday'] = res['date'].dt.weekday
+        res.loc[:, 'date'] = res['date'] - res['weekday'] * dt.timedelta(days=1)
+        total_samples = (res[(~res['pangolin_lineage'].isin(vocs))]
+                         .groupby('date')
+                         .agg(total_samples=('strain', 'nunique'))
+                         .reset_index())
+        results = res[(res['is_vui']==True)].drop_duplicates(subset=['date', 'strain'])
+        
+    b117_world_time = (results.groupby('date')
+                              .agg(num_samples=('strain', 'nunique'),
+                                   country_counts=('country', 
+                                                    lambda x: np.unique(x, 
+                                                                        return_counts=True)),
+                                   divisions=('division', 'unique'),
+                                   locations=('location', 'unique'))
+                              .reset_index())
+    b117_world_time.loc[:, 'countries'] = b117_world_time['country_counts'].apply(lambda x: list(x[0]))
+    b117_world_time.loc[:, 'country_counts'] = b117_world_time['country_counts'].apply(lambda x: list(x[1]))
+    b117_world_time = pd.merge(b117_world_time, total_samples, on='date', how='right')
+    b117_world_time.loc[:, ['num_samples', 'total_samples']] = b117_world_time[['num_samples', 'total_samples']].fillna(0)
+    first_detected = b117_world_time.loc[b117_world_time['num_samples']>0]['date'].min()
+    first_countries = b117_world_time.loc[b117_world_time['date']==first_detected, 'countries'].values[0]
+    b117_world_time = b117_world_time[b117_world_time['date']>=first_detected]
+    b117_world_time['cum_num_samples'] = b117_world_time['num_samples'].cumsum()
+    b117_world_time.loc[:, 'cum_total_samples'] = b117_world_time['total_samples'].cumsum()
+    b117_world_time.loc[:, 'rel_freq'] = b117_world_time['cum_num_samples'] / b117_world_time['cum_total_samples']
+    fig = go.Figure(data=go.Scatter(y=b117_world_time['rel_freq'], 
+                                    x=b117_world_time['date'], 
+                                    name='B.1.1.7 samples', mode='markers+lines', 
+                                    line_color='rgba(220,20,60,.6)',
+                                    text=b117_world_time[['num_samples', 'countries', 'country_counts',
+                                                          'divisions', 'locations', 
+                                                          'date']],
+                                    hovertemplate="<b>Number of cases: %{text[0]}</b><br>" +
+                                                  "<b>Country(s) Reported: %{text[1]}</b><br>" +
+                                                  "<b>Cases Per Country: %{text[2]}</b><br>" +
+                                                  "<b>State(s) Reported: %{text[3]}</b><br>" +
+                                                  "<b>County(s) Reported: %{text[4]}</b><br>" +
+                                                  "<b>Date: %{text[5]}</b><br>"))
+    fig.add_annotation(x=first_detected, 
+                       y=b117_world_time.loc[b117_world_time['date']==first_detected, 'rel_freq'].values[0],
+            text=f"On Earth, {strain} 1st detected in <br> {', '.join(first_countries)} <br> on week of <br> {first_detected.date()}",
+            showarrow=True,
+            arrowhead=1, yshift=10, arrowsize=2, ay=-250, ax=100)
+    fig.update_layout(yaxis_title=f'Relative cumulative frequency of {strain} on Earth', 
+                      xaxis_title='Collection Date',
+                      template='plotly_white', autosize=True)#, height=850,
+    fig.update_yaxes(side = 'right')
+    return fig
+
+
+def world_time(data, feature, values, res, strain='B117'):
+    if len(values)==1:
+        results = (data.loc[(data[feature]==values[0])]
+                            .drop_duplicates(subset=['date', 'strain']))
+    else:
+        # results = (data.groupby(['date', 'country', 'division', 'purpose_of_sequencing',
+        #                          'location', 'pangolin_lineage', 'strain'])
+        #                .agg(mutations=('mutation', 'unique')).reset_index())
+        # results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
+        results = (res[(res['is_vui']==True)]
+                        .drop_duplicates(subset=['date', 'strain']))
     b117_world_time = (results.groupby('date')
                               .agg(num_samples=('strain', 'nunique'),
                                    country_counts=('country', 
@@ -80,11 +153,142 @@ def world_time(gisaid_data, feature, values, strain='B117'):
     return fig
 
 
-def us_time(gisaid_data, feature, values, strain='B117', country='USA'):
-    results = (gisaid_data.loc[(gisaid_data[feature].isin(values)) & 
-                             (gisaid_data['country']=='United States of America')]
+def us_time_relative(data, feature, values, res, strain='B117', country='USA', vocs=['B.1.1.7', 'B.1.1.70']):
+    if len(values)==1:
+        data.loc[:, 'weekday'] = data['date'].dt.weekday
+        data.loc[:, 'date'] = data['date'] - data['weekday'] * dt.timedelta(days=1)
+        results = (data.loc[(data[feature]==values[0])& 
+                             (data['country']=='United States of America')]
+                            .drop_duplicates(subset=['date', 'strain']))
+        total_samples = (data[(~data['pangolin_lineage'].isin(vocs))& 
+                                 (data['country']=='United States of America')]
+                        .groupby('date')
+                        .agg(total_samples=('strain', 'nunique')))
+    else:
+        # results = (data.groupby(['date', 'country', 'division', 'purpose_of_sequencing',
+        #                          'location', 'pangolin_lineage', 'strain'])
+        #                .agg(mutations=('mutation', 'unique')).reset_index())
+        # results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
+        res = res.copy()
+        res.loc[:, 'tmp'] = res['date'].str.split('-')
+        res = res[res['tmp'].str.len()>=3]
+        res.loc[:, 'date'] = pd.to_datetime(res['date'], errors='coerce')
+        res.loc[:, 'weekday'] = res['date'].dt.weekday
+        res.loc[:, 'date'] = res['date'] - res['weekday'] * dt.timedelta(days=1)
+        total_samples = (res[(~res['pangolin_lineage'].isin(vocs))
+                            &(res['country']=='United States of America')]
+                         .groupby('date')
+                         .agg(total_samples=('strain', 'nunique'))
+                         .reset_index())
+        results = (res[(res['is_vui']==True)
+                        & (res['country']=='United States of America')]
+                        .drop_duplicates(subset=['date', 'strain']))
+    results['purpose_of_sequencing'] = '?'
+    random = results[results['purpose_of_sequencing']=='?']
+    biased = results[results['purpose_of_sequencing']!='?']
+    b117_us_time = (random.groupby('date')
+                           .agg(
+                                num_samples=('strain', 'nunique'),
+                                state_counts=('division', 
+                                              lambda x: np.unique(x, 
+                                                                  return_counts=True))
+                                )
+                           .reset_index())
+    b117_us_time.loc[:, 'states'] = b117_us_time['state_counts'].apply(lambda x: list(x[0]))
+    b117_us_time.loc[:, 'state_counts'] = b117_us_time['state_counts'].apply(lambda x: list(x[1]))
+    b117_us_time = pd.merge(b117_us_time, total_samples, on='date', how='right')
+    b117_us_time.loc[:, ['num_samples', 'total_samples']] = b117_us_time[['num_samples', 'total_samples']].fillna(0)
+
+    sdrop_us_time = (biased.groupby('date')
+                           .agg(
+                                num_samples=('strain', 'nunique'),
+                                state_counts=('division', 
+                                              lambda x: np.unique(x, 
+                                                                  return_counts=True))
+                                )
+                           .reset_index())
+    sdrop_us_time.loc[:, 'states'] = sdrop_us_time['state_counts'].apply(lambda x: list(x[0]))
+    sdrop_us_time.loc[:, 'state_counts'] = sdrop_us_time['state_counts'].apply(lambda x: list(x[1]))
+    sdrop_us_time = pd.merge(sdrop_us_time, total_samples, on='date', how='right')
+    sdrop_us_time.loc[:, ['num_samples', 'total_samples']] = sdrop_us_time[['num_samples', 'total_samples']].fillna(0)
+    
+    fig = go.Figure()
+    if b117_us_time[b117_us_time['num_samples']>0].shape[0] > 0:
+        first_detected = b117_us_time.loc[b117_us_time['num_samples']>0]['date'].min()
+        first_states = b117_us_time.loc[b117_us_time['date']==first_detected, 'states'].values[0]
+        b117_us_time = b117_us_time[b117_us_time['date']>=first_detected]
+        b117_us_time.loc[:, 'cum_num_samples'] = b117_us_time['num_samples'].cumsum()
+        b117_us_time.loc[:, 'cum_total_samples'] = b117_us_time['total_samples'].cumsum()
+        b117_us_time.loc[:, 'rel_freq'] = b117_us_time['cum_num_samples'] / b117_us_time['cum_total_samples']
+        fig.add_trace(
+            go.Scatter(y=b117_us_time['rel_freq'], 
+                                    x=b117_us_time['date'], 
+                                    name=f'{strain} samples',
+                                    mode='markers+lines', 
+                                    line_color='rgba(220,20,60,.6)',
+                                    text=b117_us_time[['num_samples', 'states', 
+                                                       'state_counts', 'date']],
+                                    hovertemplate="<b>Number of cases: %{text[0]}</b><br>" +
+                                                  "<b>State(s) Reported: %{text[1]}</b><br>" +
+                                                  "<b>Cases per State: %{text[2]}</b><br>" +
+                                                  "<b>Date: %{text[3]}</b><br>"))
+        fig.add_annotation(x=first_detected, 
+                       y=b117_us_time.loc[b117_us_time['date']==first_detected, 'rel_freq'].values[0],
+            text=f"In US, {strain} 1st detected in <br> {', '.join(first_states)} <br> on week of <br> {first_detected.date()}",
+            showarrow=True,
+            arrowhead=1, yshift=10, arrowsize=2, ay=-100)  
+    if sdrop_us_time[sdrop_us_time['num_samples']>0].shape[0] > 0:
+        first_detected = sdrop_us_time.loc[sdrop_us_time['num_samples']>0]['date'].min()
+        first_states = sdrop_us_time.loc[sdrop_us_time['date']==first_detected, 'states'].values[0]
+        sdrop_us_time = sdrop_us_time[sdrop_us_time['date']>=first_detected]
+        sdrop_us_time.loc[:, 'cum_num_samples'] = sdrop_us_time['num_samples'].cumsum()
+        sdrop_us_time.loc[:, 'cum_total_samples'] = sdrop_us_time['total_samples'].cumsum()
+        sdrop_us_time.loc[:, 'rel_freq'] = sdrop_us_time['cum_num_samples'] / sdrop_us_time['cum_total_samples']
+        fig.add_trace(
+            go.Scatter(y=sdrop_us_time['rel_freq'], 
+                        x=sdrop_us_time['date'], 
+                        name='biased sampling <br> (S Drop screen)',
+                        mode='markers+lines', 
+                        line_color='rgba(30,144,255,.6)',
+                        text=sdrop_us_time[['num_samples', 'states', 
+                                            'state_counts', 'date']],
+                        hovertemplate="<b>Number of cases: %{text[0]}</b><br>" +
+                                        "<b>State(s) Reported: %{text[1]}</b><br>" +
+                                        "<b>Cases per State: %{text[2]}</b><br>" +
+                                        "<b>Date: %{text[3]}</b><br>"))
+        fig.add_annotation(x=first_detected, 
+                       y=sdrop_us_time.loc[sdrop_us_time['date']==first_detected, 'rel_freq'].values[0],
+            text=f"In US, {strain} 1st detected in <br> {', '.join(first_states)} <br> on week of <br> {first_detected.date()}",
+            showarrow=True,
+            arrowhead=1, yshift=10, arrowsize=2, ay=-100)        
+    
+    fig.update_yaxes(side = 'right')
+    fig.update_layout(yaxis_title=f'Relative cumulative frequency of {strain} in USA', 
+                      xaxis_title='Collection Date',
+                      template='plotly_white', autosize=True, showlegend=True,
+                      legend=dict(
+                                    yanchor="top",
+                                    y=0.99,
+                                    xanchor="left",
+                                    x=0.01
+                                ))#, height=850,
+    return fig
+
+
+def us_time(data, feature, values, res, strain='B117', country='USA'):
+    if len(values)==1:
+        results = (data.loc[(data[feature]==values[0]) & 
+                             (data['country']=='United States of America')]
                           .drop_duplicates(subset=['date', 'strain']))
-    results['purpose_of_sequencing'] = 'S'
+    else:
+        # results = (data.groupby(['date', 'country', 'division', 'purpose_of_sequencing',
+        #                          'location', 'pangolin_lineage', 'strain'])
+        #                .agg(mutations=('mutation', 'unique')).reset_index())
+        # results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
+        results = (res[(res['is_vui']==True)
+                        & (res['country']=='United States of America')]
+                        .drop_duplicates(subset=['date', 'strain']))
+    results['purpose_of_sequencing'] = '?'
     random = results[results['purpose_of_sequencing']=='?']
     biased = results[results['purpose_of_sequencing']!='?']
     b117_us_time = (random.groupby('date')
@@ -172,11 +376,138 @@ def us_time(gisaid_data, feature, values, strain='B117', country='USA'):
     return fig
 
 
-def ca_time(gisaid_data, feature, values, strain='B117', state='California'):
-    results = (gisaid_data.loc[(gisaid_data[feature].isin(values)) & 
-                             (gisaid_data['division']==state)]
-                          .drop_duplicates(subset=['date', 'strain']))
-    results['purpose_of_sequencing'] = 'S'
+def ca_time_relative(data, feature, values, res, 
+                     strain='B117', state='California',
+                     vocs=['B.1.1.7', 'B.1.1.70']):
+    if len(values)==1:
+        data.loc[:, 'weekday'] = data['date'].dt.weekday
+        data.loc[:, 'date'] = data['date'] - data['weekday'] * dt.timedelta(days=1)
+        results = (data.loc[(data[feature]==values[0])& 
+                             (data['division']==state)]
+                            .drop_duplicates(subset=['date', 'strain']))
+        total_samples = (data[(~data['pangolin_lineage'].isin(vocs))& 
+                                 (data['division']==state)]
+                        .groupby('date')
+                        .agg(total_samples=('strain', 'nunique')))
+    else:
+        res = res.copy()
+        res.loc[:, 'tmp'] = res['date'].str.split('-')
+        res = res[res['tmp'].str.len()>=3]
+        res.loc[:, 'date'] = pd.to_datetime(res['date'], errors='coerce')
+        res.loc[:, 'weekday'] = res['date'].dt.weekday
+        res.loc[:, 'date'] = res['date'] - res['weekday'] * dt.timedelta(days=1)
+        total_samples = (res[(~res['pangolin_lineage'].isin(vocs))
+                            &(res['division']==state)]
+                         .groupby('date')
+                         .agg(total_samples=('strain', 'nunique'))
+                         .reset_index())
+        results = res[(res['is_vui']==True)
+                    & (res['division']==state)].drop_duplicates(subset=['date', 'strain'])
+    results.loc[:, 'purpose_of_sequencing'] = '?'
+    random = results[results['purpose_of_sequencing']=='?']
+    biased = results[results['purpose_of_sequencing']!='?']
+    b117_ca_time = (random.groupby('date')
+                           .agg(num_samples=('strain', 'nunique'),
+                                county_counts=('location', 
+                                lambda x: np.unique(x, return_counts=True)))
+                           .reset_index())
+    b117_ca_time.loc[:, 'counties'] = b117_ca_time['county_counts'].apply(lambda x: list(x[0]))
+    b117_ca_time.loc[:, 'county_counts'] = b117_ca_time['county_counts'].apply(lambda x: list(x[1]))
+#     b117_ca_time.loc[:, 'date'] = pd.to_datetime(b117_ca_time['date'], 
+#                                              errors='coerce')
+    b117_ca_time = pd.merge(b117_ca_time, total_samples, on='date', how='right')
+    b117_ca_time.loc[:, ['num_samples', 'total_samples']] = b117_ca_time[['num_samples', 'total_samples']].fillna(0)
+    sdrop_ca_time = (biased.groupby('date')
+                           .agg(
+                                num_samples=('strain', 'nunique'),
+                                county_counts=('location', 
+                                              lambda x: np.unique(x, return_counts=True))
+                                )
+                           .reset_index())
+    sdrop_ca_time.loc[:, 'counties'] = sdrop_ca_time['county_counts'].apply(lambda x: list(x[0]))
+    sdrop_ca_time.loc[:, 'county_counts'] = sdrop_ca_time['county_counts'].apply(lambda x: list(x[1]))
+#     sdrop_ca_time.loc[:, 'date'] = pd.to_datetime(sdrop_ca_time['date'], errors='coerce')
+    sdrop_ca_time = pd.merge(sdrop_ca_time, total_samples, on='date', how='right')
+    sdrop_ca_time.loc[:, ['num_samples', 'total_samples']].fillna(0, inplace=True)
+    fig = go.Figure()
+    if b117_ca_time[b117_ca_time['num_samples']>0].shape[0] > 0:
+        first_detected = b117_ca_time.loc[b117_ca_time['num_samples']>0]['date'].min()
+        first_counties = b117_ca_time.loc[b117_ca_time['date']==first_detected, 'counties'].values[0]
+        b117_ca_time = b117_ca_time[b117_ca_time['date']>=first_detected]
+        b117_ca_time.loc[:, 'cum_num_samples'] = b117_ca_time['num_samples'].cumsum()
+        b117_ca_time.loc[:, 'cum_total_samples'] = b117_ca_time['total_samples'].cumsum()
+        b117_ca_time.loc[:, 'rel_freq'] = b117_ca_time['cum_num_samples'] / b117_ca_time['cum_total_samples']
+        fig.add_trace(
+            go.Scatter(y=b117_ca_time['rel_freq'], 
+                                    x=b117_ca_time['date'], 
+                                    name=f'{strain} samples', mode='markers+lines', 
+                                    line_color='rgba(220,20,60,.6)',
+                                    text=b117_ca_time[['num_samples', 'counties', 
+                                                       'county_counts', 'date']],
+                                    hovertemplate="<b>Number of cases: %{text[0]}</b><br>" +
+                                                  "<b>County(s) Reported: %{text[1]}</b><br>" +
+                                                  "<b>Cases per County: %{text[2]}</b><br>" +
+                                                  "<b>Date: %{text[3]}</b><br>"))
+        fig.add_annotation(x=first_detected, 
+                        y=b117_ca_time.loc[b117_ca_time['date']==first_detected, 'rel_freq'].values[0],
+                        text=f"In CA, {strain} 1st detected in <br> {', '.join(first_counties)} county(s) <br> on week of <br> {first_detected.date()}",
+                        showarrow=True,
+                        arrowhead=1, yshift=10, arrowsize=2, ay=-50)
+    if sdrop_ca_time[sdrop_ca_time['num_samples']>0].shape[0] > 0:
+        first_detected = sdrop_ca_time.loc[sdrop_ca_time['num_samples']>0]['date'].min()
+        first_counties = sdrop_ca_time.loc[sdrop_ca_time['date']==first_detected, 'counties'].values[0]
+        sdrop_ca_time = sdrop_ca_time[sdrop_ca_time['date']>=first_detected]
+        sdrop_ca_time.loc[:, 'cum_num_samples'] = sdrop_ca_time['num_samples'].cumsum()
+        sdrop_ca_time.loc[:, 'cum_total_samples'] = sdrop_ca_time['total_samples'].cumsum()
+        sdrop_ca_time.loc[:, 'rel_freq'] = sdrop_ca_time['cum_num_samples'] / sdrop_ca_time['cum_total_samples']
+        fig.add_trace(
+            go.Scatter(y=sdrop_ca_time['rel_freq'], 
+                        x=sdrop_ca_time['date'], 
+                        name='biased sampling <br> (S Drop screen)', 
+                        mode='markers+lines', 
+                        line_color='rgba(30,144,255,.6)',
+                        text=sdrop_ca_time[['num_samples', 'counties', 
+                                            'county_counts', 'date']],
+                        hovertemplate="<b>Number of cases: %{text[0]}</b><br>" +
+                                        "<b>State(s) Reported: %{text[1]}</b><br>" +
+                                        "<b>Cases per State: %{text[2]}</b><br>" +
+                                        "<b>Date: %{text[3]}</b><br>"
+                        )
+                    )
+        
+        fig.add_annotation(x=first_detected, 
+                        y=sdrop_ca_time.loc[sdrop_ca_time['date']==first_detected, 'rel_freq'].values[0],
+                text=f"""In CA, {strain} 1st detected in <br> {', '.join(first_counties)} county(s) <br> on week of <br> {first_detected.date()}""",
+                showarrow=True,
+                arrowhead=1, yshift=10, arrowsize=2, ay=-50)
+    fig.update_yaxes(side = 'right')
+    fig.update_layout(yaxis_title=f'Relative cumulative frequency of {strain} in CA', 
+                      xaxis_title='Collection Date',
+                      template='plotly_white', showlegend=True,
+                      legend=dict(
+                                    yanchor="top",
+                                    y=0.99,
+                                    xanchor="left",
+                                    x=0.01
+                                ),
+                      autosize=True#, autosize=True
+                                )#, height=850,
+    return fig
+
+
+def ca_time(data, feature, values, res, strain='B117', state='California'):
+    if len(values)==1:
+        results = (data.loc[(data[feature]==values[0]) & 
+                                   (data['division']==state)]
+                              .drop_duplicates(subset=['date', 'strain']))
+    else:
+        # results = (data.groupby(['date', 'country', 'division', 
+        #                          'location', 'pangolin_lineage', 'strain'])
+        #                .agg(mutations=('mutation', 'unique')).reset_index())
+        # results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
+        results = res[(res['is_vui']==True)
+                      &(res['division']==state)].drop_duplicates(subset=['date', 'strain'])
+    results['purpose_of_sequencing'] = '?'
     random = results[results['purpose_of_sequencing']=='?']
     biased = results[results['purpose_of_sequencing']!='?']
     b117_ca_time = (random.groupby('date')
@@ -232,7 +563,9 @@ def ca_time(gisaid_data, feature, values, strain='B117', state='California'):
                         hovertemplate="<b>Number of cases: %{text[0]}</b><br>" +
                                         "<b>State(s) Reported: %{text[1]}</b><br>" +
                                         "<b>Cases per State: %{text[2]}</b><br>" +
-                                        "<b>Date: %{text[3]}</b><br>"))
+                                        "<b>Date: %{text[3]}</b><br>"
+                        )
+                    )
         first_detected = sdrop_ca_time['date'].min()
         first_counties = sdrop_ca_time.loc[sdrop_ca_time['date']==first_detected, 'counties']
         fig.add_annotation(x=first_detected, 
@@ -241,7 +574,7 @@ def ca_time(gisaid_data, feature, values, strain='B117', state='California'):
                 showarrow=True,
                 arrowhead=1, yshift=10, arrowsize=2, ay=-50)
     fig.update_yaxes(side = 'right')
-    fig.update_layout(yaxis_title=f'Cumulative number of cases in CA', 
+    fig.update_layout(yaxis_title=f'Cumulative number of {strain} in CA', 
                       xaxis_title='Collection Date',
                       template='plotly_white', autosize=True, showlegend=True,
                       legend=dict(
@@ -257,7 +590,7 @@ def strain_nt_distance(data, feature, values, strain='B117', sample_sz=250, vocs
     clock_rate = 8e-4
     if feature=='pangolin_lineage':
         dists_df = create_lineage_data(data, feature, values, strain=strain, sample_sz=sample_sz, vocs=vocs)
-    elif feature=='mutations':
+    elif feature=='mutation':
         dists_df = create_distance_data(data, mutations=set(values), strain=strain, sample_sz=sample_sz, vocs=vocs)
     else:
         raise ValueError(f"Feature of type {feature} is not yet available for analysis. Aborting...")
@@ -341,7 +674,7 @@ def create_lineage_data(data, feature, values, strain, sample_sz=250, vocs=['B.1
     data.loc[data['strain'].isin(outgroup), 'group'] = 'outgroup'
     data.loc[(data['strain'].isin(ingroup)), 'group'] = f'Lineage {strain}'
     data.loc[(data['strain'].isin(usgroup)), 'group'] = f'Lineage {strain} in US'
-    return data  
+    return data 
 
 
 def create_distance_data(data: pd.DataFrame, mutations: set, strain: str, 
@@ -803,32 +1136,39 @@ def mutation_diversity(data, mutation, strain='S:L452R'):
 
 def mutation_diversity_multi(data, mutations, strain='CAVUI1'):
     ref_codons, ref_positions = {}, {}
+    # for each mutation type e.g. S:N501Y
     for m in mutations:
+        # fetch reference codon
         ref_codons[m] = data.loc[data['mutation']==m, 'ref_codon'].unique()[0]
+        # fetch all alternative codons that lead to this amino acid change
         ref_positions[m] = ','.join(str(i) for i in data.loc[data['mutation']==m, 'pos'].unique())
     titles = [m+f' ({ref_codons[m]})' for m in mutations]
     fig = make_subplots(rows=2, cols=len(mutations), horizontal_spacing=0.1,
-                        subplot_titles=titles, specs=[[{}, {}, {}],
-                                                   [{"colspan": len(mutations)}, None, None]],)
-    for i, m in enumerate(mutations):
-        codon_counts = (data.loc[data['mutation']==m, 'alt_codon']
-                          .value_counts()
-                          .to_frame()
-                          .reset_index()
-                          .rename(columns={'index': 'alt_codon', 'alt_codon': 'num_samples'}))
-        codon_counts['pct_samples'] = codon_counts['num_samples'] / codon_counts['num_samples'].sum()
-        fig.add_trace(go.Bar(
-                    y=codon_counts['alt_codon'], x=codon_counts['num_samples'], orientation='h',
-                    text=codon_counts['pct_samples'],
-                    textposition='inside', width=0.6
-                ), 
-                    row=1, col=i+1)
-    res = (data.groupby(['date', 'country', 'division', 'location', 
-                        'pangolin_lineage', 'strain'])
+                        subplot_titles=titles,
+                        specs=[[{} for m in range(len(mutations))],
+                              [{"colspan": len(mutations)}]+[None for m in range(len(mutations)-1)]],
+                        )
+    res = (data.groupby(['date', 'strain', 'pangolin_lineage'])
                .agg(mutations=('mutation', 'unique'))
                .reset_index())
-    res['is_vui'] = res['mutations'].apply(bv.is_vui, args=(set(mutations),)) 
-    lineage_counts = (res.loc[res['is_vui']==True, 'pangolin_lineage']
+    res['is_vui'] = res['mutations'].apply(bv.is_vui, args=(set(mutations),))
+    res = res[res['is_vui']==True]
+    sois = res['strain'].unique()
+    data = data.loc[data['strain'].isin(sois)]
+    for i, m in enumerate(mutations):
+        codon_counts = (data.loc[data['mutation']==m, 'alt_codon']
+                            .value_counts()
+                            .to_frame()
+                            .reset_index()
+                            .rename(columns={'index': 'alt_codon', 'alt_codon': 'num_samples'}))
+        codon_counts['pct_samples'] = codon_counts['num_samples'] / codon_counts['num_samples'].sum()
+        fig.add_trace(go.Bar(
+                        y=codon_counts['alt_codon'], x=codon_counts['num_samples'], orientation='h',
+                        text=codon_counts['pct_samples'],
+                        textposition='inside', width=0.6
+                    ), 
+                        row=1, col=i+1)
+    lineage_counts = (res['pangolin_lineage']
                   .value_counts()
                   .to_frame()
                   .reset_index()
@@ -841,20 +1181,34 @@ def mutation_diversity_multi(data, mutations, strain='CAVUI1'):
         ), 
                 row=2, col=1)
     fig.update_traces(texttemplate='%{text:.2p}')
+    fig.update_xaxes(showticklabels=False, row=1, col=1)
     fig.update_yaxes(title_text="Alternative <br>codons", row=1, col=1)
     fig.update_yaxes(title_text="Lineage (pangolin)", row=2, col=1)
     fig.update_xaxes(title_text="Number of Sequences", row=2, col=1)
     fig.update_layout(template='plotly_white', showlegend=False, 
                       width=500, margin={"r":0})
+    for i in range(len(mutations)):
+        fig.update_xaxes(showticklabels=False, row=1, col=i+1)
+    for i in fig['layout']['annotations']:
+        i['font'] = dict(size=7,color='#ff0000')
     return fig
 
 
-def map_by_state(data: pd.DataFrame, feature: str, values: list, states_fp: str, strain: str='B117'):
+def map_by_state(data: pd.DataFrame, feature: str, values: list, states_fp: str, res, strain: str='B117'):
     with open(states_fp) as f:
         states = json.load(f)
     state_map = {x['properties']['name']: x['id'] for x in states['features']}
     total_samples_by_state = data.groupby('division').agg(total_samples=('strain', 'nunique')).reset_index()
-    results = data.loc[(data[feature].isin(values)) & (data['country']=='United States of America')]
+    if len(values)==1:
+        results = data.loc[(data[feature].isin(values)) 
+                         & (data['country']=='United States of America')].copy()
+    else:    
+        # results = (data.groupby(['date', 'country', 'division', 'location', 
+        #                 'pangolin_lineage', 'strain'])
+        #        .agg(mutations=('mutation', 'unique'))
+        #        .reset_index())
+        # results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
+        results = res[(res['is_vui']==True) & (res['country']=='United States of America')]
     results_by_state = results.groupby('division').agg(num_samples=('strain', 'nunique')).reset_index()
     results_by_state = pd.merge(total_samples_by_state, results_by_state, on='division', how='left')
     results_by_state['num_samples'].fillna(0, inplace=True)
@@ -875,16 +1229,24 @@ def map_by_state(data: pd.DataFrame, feature: str, values: list, states_fp: str,
                                        ticktext=[int(np.exp(i)) for i in tickvals],
                                        title=f"{strain} Cases <br>(logarithmic)",
                                        y=0.5, x=0))
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, autosize=True)
     return fig, state_map, results_by_state
 
 
-def map_by_country(data: pd.DataFrame, feature: str, values: list, countries_fp, strain: str='B117'):
+def map_by_country(data: pd.DataFrame, feature: str, values: list, countries_fp, res, strain: str='B117'):
     with open(countries_fp) as f:
         countries = json.load(f)
     country_map = {x['properties']['name']: x['id'] for x in countries['features']}
     total_samples_by_country = data.groupby('country').agg(total_samples=('strain', 'nunique')).reset_index()
-    results = data.loc[data[feature].isin(values)].copy()
+    if len(values)==1:
+        results = data.loc[data[feature]==values[0]].copy()
+    else:
+        # results = (data.groupby(['date', 'country', 'division', 'location', 
+        #                 'pangolin_lineage', 'strain'])
+        #        .agg(mutations=('mutation', 'unique'))
+        #        .reset_index())
+        # results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
+        results = res[res['is_vui']==True] 
     results_by_cntry = results.groupby('country').agg(num_samples=('strain', 'nunique')).reset_index()
     results_by_cntry = pd.merge(total_samples_by_country, results_by_cntry, on='country', how='left')
     results_by_cntry['num_samples'].fillna(0, inplace=True)
@@ -906,7 +1268,7 @@ def map_by_country(data: pd.DataFrame, feature: str, values: list, countries_fp,
                                        ticktext=[int(np.exp(i)) for i in tickvals],
                                        title=f"{strain} Cases <br>(logarithmic)",
                                        y=0.5, x=0))
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, autosize=True)
     return fig, country_map, results_by_cntry
 
 
@@ -921,8 +1283,20 @@ def map_by_county(data: pd.DataFrame, feature: str, values: list,
     with open(counties_fp) as f:
         counties = json.load(f)
     counties_map = {x['properties']['NAME']+'-'+state_map[x['properties']['STATE']]: x['id'] for x in counties['features']}
-    total_samples_by_county = data.groupby('county').agg(total_samples=('strain', 'nunique')).reset_index()
-    results = data.loc[(data[feature].isin(values)) & (data['country']=='United States of America')]
+    total_samples_by_county = (data.groupby('county')
+                                   .agg(total_samples=('strain', 'nunique'))
+                                   .reset_index())
+    if len(values)==1:
+        results = data.loc[(data[feature]==values[0]) 
+                         & (data['country']=='United States of America')]
+    else:
+        results = (data.groupby(['date', 'country', 'division', 'county', 
+                        'pangolin_lineage', 'strain'])
+               .agg(mutations=('mutation', 'unique'))
+               .reset_index())
+        results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
+        results = results[(results['is_vui']==True)
+                        & (results['country']=='United States of America')]
     results_by_county = results.groupby('county').agg(num_samples=('strain', 'nunique')).reset_index()
     results_by_county = results_by_county[results_by_county['county']!='unk']
     results_by_county = pd.merge(total_samples_by_county, results_by_county, on='county', how='left')
@@ -940,12 +1314,14 @@ def map_by_county(data: pd.DataFrame, feature: str, values: list,
                                hover_data=['county', 'num_samples', 'total_samples'],
                                labels={'num_samples':f'Cases with {strain}', 'total_samples': 'Total Cases'}
                               )
+    # get tick values of color bar 
     tickvals = np.linspace(0, results_by_county['log_num_samples'].max(), num=5)
+    # show absolute values as tick labels, other colorbar configs
     fig.update_coloraxes(colorbar=dict(showticklabels=True, tickvals=tickvals, 
                                        ticktext=[int(np.exp(i)) for i in tickvals],
                                        title=f"{strain} Cases <br>(logarithmic)",
                                        y=0.5, x=0))
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, autosize=True)
     return fig, counties_map, results_by_county
 
 
