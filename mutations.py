@@ -295,18 +295,70 @@ def identify_deletions(input_fasta: str,
     return del_seqs#[cols]
 
 
-def identify_deletions_per_sample(input_filepath, meta_fp, 
-                                  patient_zero, gene2pos,
-                                  min_del_len=1, start_pos=265,
-                                  end_pos=29674, data_src='alab'):
+def identify_deletions_per_sample(input_fasta, meta_fp, 
+                                  gene2pos, 
+                                  data_src,
+                                  min_del_len=1, 
+                                  start_pos=265,
+                                  end_pos=29674,
+                                  patient_zero: str='NC_045512.2',
+                                  test=False):
     # read MSA file
-    consensus_data = AlignIO.read(input_filepath, 'fasta')
+    print(f"Loading Alignment file at: {input_fasta}")
+    cns = AlignIO.read(input_fasta, 'fasta')
     # prcess MSA to remove insertions and fix position coordinate systems
-    seqs, ref_seq = process_cns_seqs(consensus_data, patient_zero, start_pos, end_pos)
+    seqs, ref_seq = process_cns_seqs(cns, patient_zero, start_pos, end_pos)
+    print(f"Initial cleaning...")
     # load into dataframe
     seqsdf = (pd.DataFrame(index=seqs.keys(), data=seqs.values(), 
                            columns=['sequence'])
                 .reset_index().rename(columns={'index': 'idx'}))
+    if test:
+        seqsdf = seqsdf.sample(100)
+    # compute length of each sequence
+    seqsdf['seq_len'] = seqsdf['sequence'].str.len()
+    print(f"Identifying deletions...")
+    # identify deletion positions
+    seqsdf['del_positions'] = seqsdf['sequence'].apply(find_deletions)
+    # dump sequences to save mem, boost speed
+    seqsdf.drop(columns=['sequence'], inplace=True)
+    # sequences with one or more deletions
+    seqsdf = seqsdf.loc[seqsdf['del_positions'].str.len() > 0]
+    seqsdf = seqsdf.explode('del_positions')
+    # compute length of each deletion
+    seqsdf['del_len'] = seqsdf['del_positions'].apply(len)
+    # only consider deletions longer than 2nts
+    seqsdf = seqsdf[seqsdf['del_len'] >= min_del_len]
+    # fetch coordinates of each deletion
+    seqsdf['relative_coords'] = seqsdf['del_positions'].apply(get_indel_coords)
+    seqsdf['type'] = 'deletion'
+    # adjust coordinates to account for the nts trimmed from beginning e.g. 265nts
+    seqsdf['absolute_coords'] = seqsdf['relative_coords'].apply(adjust_coords, args=(start_pos+1,))
+    seqsdf['pos'] = seqsdf['absolute_coords'].apply(lambda x: int(x.split(':')[0])+1)
+    print(f"Mapping Genes to mutations...")
+    # approximate the gene where each deletion was identified
+    seqsdf['gene'] = seqsdf['pos'].apply(map_gene_to_pos)
+    seqsdf = seqsdf.loc[~seqsdf['gene'].isna()]
+    # filter our substitutions in non-gene positions
+    seqsdf = seqsdf.loc[seqsdf['gene']!='nan']
+    print(f"Computing codon numbers...")
+    # compute codon number of each substitution
+    seqsdf['codon_num'] = seqsdf.apply(compute_codon_num, args=(gene2pos,), axis=1)
+    print(f"Fetching reference codon...")
+    # fetch the reference codon for each substitution
+    seqsdf['ref_codon'] = seqsdf.apply(get_ref_codon, args=(ref_seq, gene2pos), axis=1)
+    print(f"Mapping amino acids...")
+    # fetch the reference and alternative amino acids
+    seqsdf['ref_aa'] = seqsdf['ref_codon'].apply(get_aa)
+    # record the deletion subsequence
+    seqsdf['del_seq'] = seqsdf['absolute_coords'].apply(get_deletion, args=(ref_seq,))
+    # record the 5 nts before each deletion (based on reference seq)
+    seqsdf['prev_5nts'] = seqsdf['absolute_coords'].apply(lambda x: ref_seq[int(x.split(':')[0])-5:int(x.split(':')[0])])
+    # record the 5 nts after each deletion (based on reference seq)
+    seqsdf['next_5nts'] = seqsdf['absolute_coords'].apply(lambda x: ref_seq[int(x.split(':')[1])+1:int(x.split(':')[1])+6])
+    print("Naming deletions")
+    seqsdf['mutation'] = seqsdf[['gene', 'codon_num', 'del_len']].apply(assign_deletion, axis=1)
+    print(f"Fuse with metadata...")
     # load and join metadata
     if meta_fp:
         if data_src=='alab':
@@ -320,29 +372,26 @@ def identify_deletions_per_sample(input_filepath, meta_fp,
         elif data_src=='gisaid':
             meta = pd.read_csv(meta_fp, sep='\t', compression='gzip')
             # filter out improper collection dates
-            meta['tmp'] = meta['date'].str.split('-')
-            meta = meta[meta['tmp'].str.len()>=3]
+            # meta['tmp'] = meta['date'].str.split('-')
+            # meta = meta[meta['tmp'].str.len()>=3]
             seqsdf = pd.merge(seqsdf, meta, left_on='idx', right_on='strain')
-            seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
-            seqsdf['month'] = seqsdf['date'].dt.month
+            # seqsdf['date'] = pd.to_datetime(seqsdf['date'], errors='coerce')
+            # seqsdf['month'] = seqsdf['date'].dt.month
             seqsdf.loc[seqsdf['location'].isna(), 'location'] = 'unk'
             seqsdf = seqsdf[seqsdf['host']=='Human']
         else:
             raise ValueError(f"user-specified data source {data_src} not recognized. Aborting.")
-    # compute length of each sequence
-    seqsdf['seq_len'] = seqsdf['sequence'].str.len()
-    # identify deletion positions
-    seqsdf['del_positions'] = seqsdf['sequence'].apply(find_deletions)
-    # sequences with one or more deletions
-    seqsdf = seqsdf.loc[seqsdf['del_positions'].str.len() > 0]
-    seqsdf = seqsdf.explode('del_positions')
-    # compute length of each deletion
-    seqsdf['del_len'] = seqsdf['del_positions'].apply(len)
-    # only consider deletions longer than 2nts
-    seqsdf = seqsdf[seqsdf['del_len'] >= min_del_len]
-    # fetch coordinates of each deletion
-    seqsdf['relative_coords'] = seqsdf['del_positions'].apply(get_indel_coords)
     return seqsdf, ref_seq
+
+
+def get_deletion(x, ref_seq):
+    start, end = int(x.split(':')[0]), int(x.split(':')[1])
+    return ref_seq[start+1:end+2]
+
+
+def assign_deletion(x):
+    deletion = x['gene'] + ':DEL' + str(x['codon_num']) + '/' + str(x['codon_num'] + (x['del_len']/3) - 1)
+    return deletion
 
 
 def identify_insertions(input_filepath: str,
