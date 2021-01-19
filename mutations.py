@@ -1,6 +1,7 @@
 import os
 import math
 import re
+import gzip
 import numpy as np
 import pandas as pd
 import more_itertools as mit
@@ -83,9 +84,14 @@ def identify_replacements_per_sample(input_fasta,
                                      gene2pos,
                                      data_src,
                                      patient_zero: str='NC_045512.2',
+                                     is_gzip: bool=False,
                                      test: bool=False):
     print(f"Loading Alignment file at: {input_fasta}")
-    cns = AlignIO.read(input_fasta, 'fasta')
+    if is_gzip:
+        with gzip.open(input_fasta, "rt") as handle:
+            cns = AlignIO.read(handle, 'fasta')
+    else:
+        cns = AlignIO.read(input_fasta, 'fasta')
     print(f"Initial cleaning...")
     seqs, ref_seq = process_cns_seqs(cns, patient_zero,
                                      start_pos=0, end_pos=30000)
@@ -115,24 +121,26 @@ def identify_replacements_per_sample(input_fasta,
     seqsdf = seqsdf.loc[~seqsdf['gene'].isna()]
     # filter our substitutions in non-gene positions
     seqsdf = seqsdf.loc[seqsdf['gene']!='nan']
-    print(f"Compute codon numbers...")
+    print(f"Computing codon numbers...")
     # compute codon number of each substitution
     seqsdf['codon_num'] = seqsdf.apply(compute_codon_num, args=(gene2pos,), axis=1)
-    print(f"Fetch reference codon...")
+    print(f"Fetching reference codon...")
     # fetch the reference codon for each substitution
     seqsdf['ref_codon'] = seqsdf.apply(get_ref_codon, args=(ref_seq, gene2pos), axis=1)
-    print(f"Fetch alternative codon...")
+    print(f"Fetching alternative codon...")
     # fetch the alternative codon for each substitution
     seqsdf['alt_codon'] = seqsdf.apply(get_alt_codon, args=(gene2pos,), axis=1)
-    print(f"Map amino acids...")
+    # drop the actual sequences to save mem
+    seqsdf.drop(columns=['sequence'], inplace=True)
+    print(f"Mapping amino acids...")
     # fetch the reference and alternative amino acids
     seqsdf['ref_aa'] = seqsdf['ref_codon'].apply(get_aa)
     seqsdf['alt_aa'] = seqsdf['alt_codon'].apply(get_aa)
     # filter out substitutions with non-amino acid alternates (bad consensus calls)
     seqsdf = seqsdf.loc[seqsdf['alt_aa']!='nan']
-    # drop the actual sequences to save mem
-    seqsdf.drop(columns=['sequence'], inplace=True)
-    print(f"Fuse with metadata...")
+    print("Naming substitutions")
+    seqsdf['mutation'] = seqsdf['gene'] + ':' + seqsdf['ref_aa'] + seqsdf['codon_num'].astype(str) + seqsdf['alt_aa']
+    print(f"Fusing with metadata...")
     # load and join metadata
     if meta_fp:
         if data_src=='alab':
@@ -153,6 +161,7 @@ def identify_replacements_per_sample(input_fasta,
             # seqsdf['month'] = seqsdf['date'].dt.month
             seqsdf.loc[seqsdf['location'].isna(), 'location'] = 'unk'
             seqsdf = seqsdf[seqsdf['host']=='Human']
+            seqsdf.loc[seqsdf['country']=='USA', 'country'] = 'United States of America'
         else:
             raise ValueError(f"user-specified data source {data_src} not recognized. Aborting.")
     return seqsdf, ref_seq
@@ -302,10 +311,15 @@ def identify_deletions_per_sample(input_fasta, meta_fp,
                                   start_pos=265,
                                   end_pos=29674,
                                   patient_zero: str='NC_045512.2',
+                                  is_gzip: bool=False,
                                   test=False):
     # read MSA file
     print(f"Loading Alignment file at: {input_fasta}")
-    cns = AlignIO.read(input_fasta, 'fasta')
+    if is_gzip:
+        with gzip.open(input_fasta, "rt") as handle:
+            cns = AlignIO.read(handle, 'fasta')
+    else:
+        cns = AlignIO.read(input_fasta, 'fasta')
     # prcess MSA to remove insertions and fix position coordinate systems
     seqs, ref_seq = process_cns_seqs(cns, patient_zero, start_pos, end_pos)
     print(f"Initial cleaning...")
@@ -379,6 +393,7 @@ def identify_deletions_per_sample(input_fasta, meta_fp,
             # seqsdf['month'] = seqsdf['date'].dt.month
             seqsdf.loc[seqsdf['location'].isna(), 'location'] = 'unk'
             seqsdf = seqsdf[seqsdf['host']=='Human']
+            seqsdf.loc[seqsdf['country']=='USA', 'country'] = 'United States of America'
         else:
             raise ValueError(f"user-specified data source {data_src} not recognized. Aborting.")
     return seqsdf, ref_seq
