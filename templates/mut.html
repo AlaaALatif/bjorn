@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
+    <script>
+      $(document).ready(function(){
+      // Add smooth scrolling to all links
+      $("a").on('click', function(event) {
+      // Make sure this.hash has a value before overriding default behavior
+      if (this.hash !== "") {
+      // Prevent default anchor click behavior
+      event.preventDefault();
+      // Store hash
+      var hash = this.hash;
+      // Using jQuery's animate() method to add smooth page scroll
+      // The optional number (800) specifies the number of milliseconds it takes to scroll to the specified area
+      $('html, body').animate({
+      scrollTop: $(hash).offset().top
+      }, 800, function(){
+      // Add hash (#) to URL when done scrolling (default click behavior)
+      window.location.hash = hash;
+      });
+      } // End if
+      });
+      });
+    </script>
+  </head>
+  <body>
+    <nav class="navbar navbar-dark bg-dark">
+      <div class="container-fluid">
+	<span class="navbar-brand mb-0 h1">SITREP: {{strain}} lineage in USA</span>
+      </div>
+    </nav>
+    <br>
+    <div class="container">
+      <!-- *** Section 1 - General Info *** --->
+      <div class="row" id="section1">
+	<div class="col-6">
+          <h3> General Information </h3>
+    </div>
+    
+
+	<div class="col-3 offset-md-3">
+	  <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section5">LAST</a>
+          <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section2">NEXT</a>
+	</div>
+	<hr>
+        <p> This post is intended to act as a brief Situation Report (SITREP) about the {{strain}}, 
+            which refers to SARS-CoV-2 sequences containing {{mutations}} 
+            mutation(s) present. <br> <br>
+          As of {{date}}, there's been {{total_num}} sequences
+          detected in over {{num_countries}} countries under this strain (see table for definition).
+          In the US, there's been {{us_num}} sequences detected in over {{num_states}} states. 
+          In California, there's been {{ca_num}} sequences detected. 
+          <br>
+          <br>
+          {{num_lineages}}<br>
+          <br>
+
+          This report follows a bottom-up approach starting with background information, and followed by
+          prevalence at the state, national, and global level in that order.</p>
+	<!-- </div> -->
+      <!-- <div class="row"> -->
+        <div class="col">
+        <figure>
+          {{mutation_diversity}}
+          <figcaption>Figure 1.1A (top) shows the nucleotide mutations that lead to {{strain}} and their corresponding frequencies.
+            Figure 1.1B (bottom) shows the lineages (pangolin) that contain {{strain}} and corresponding frequencies. 
+         </figcaption>
+        </figure></div>
+
+        <div class="col">
+          <figure>
+            {{strain_distance_plot}}
+            <figcaption>Figure 1.2: shows the number of substitutions per site (root-to-tip), a measure of evolutionary
+               changes, for strain and non-strain (related) samples (excluding other well known VOCs e.g. B.1.1.7, B.1.135). 
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <!-- *** Section 2 - State Prevalence *** --->
+      <div class="row" id="section2">
+	<div class="col-6">
+          <h3>State Prevalence</h3>
+	</div>
+	<div class="col-3 offset-md-3">
+	  <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section1">PREV</a>
+          <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section3">NEXT</a>
+	</div>
+	<hr>
+        <div class="col">
+          <figure>
+            {{county_map}}
+            <figcaption>Figure 2.1 shows the spatial (geographical) prevalence of the strain across California.
+            </figcaption>
+        </figure></div>
+        <div class="col">
+          <figure>
+            {{ca_rtime}}
+            <figcaption>Figure 2.2 shows the relative temporal (over time) prevalence of the strain across California, 
+              represented as a fraction of overall cumulative number of samples (excluding VoC B117).
+            </figcaption>
+          </figure>
+	</div>
+      </div>
+
+      <!-- *** Section 3 - National Prevalence *** --->
+      <div class="row" id="section3">
+	<div class="col-6">
+          <h3>National Prevalence</h3>
+	</div>
+	<div class="col-3 offset-md-3">
+	  <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section2">PREV</a>
+          <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section4">NEXT</a>
+	</div>
+	<hr>
+        <div class="col">
+          <figure>
+            {{state_map}}
+            <figcaption>Figure 3.1 shows the spatial (geographical) prevalence of the strain across the US.
+            </figcaption>
+          </figure>
+	</div>
+        <div class="col">
+          <figure>
+            {{us_rtime}}
+            <figcaption>Figure 3.2 shows the relative temporal (over time) prevalence of the strain across USA, 
+              represented as a fraction of overall cumulative number of samples (excluding VoC B117).
+            </figcaption>
+          </figure>
+	</div>
+      </div>
+
+      <!-- *** Section 4 - Global Prevalence *** --->
+      <div class="row" id="section4">
+	<div class="col-6">
+          <h3>Global Prevalence</h3>
+          More detailed information on global prevalence of SARS-CoV-2 
+          strains of concern can be found in <a href="https://cov-lineages.org/global_report.html">this post</a>.
+	</div>
+	<div class="col-3 offset-md-3">
+	  <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section3">PREV</a>
+          <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section5">NEXT</a>
+  </div>
+  <hr>
+        <div class="col">
+          <figure>
+            {{world_map}}
+            <figcaption>Figure 4.1 shows the spatial (geographical) prevalence of the strain 
+              across the world.
+            </figcaption>
+	    </div>
+        <div class="col">
+          <figure>
+            {{world_rtime}}
+            <figcaption>Figure 4.2 shows the relative temporal (over time) prevalence of the strain across the globe, 
+              represented as a fraction of overall cumulative number of samples (excluding VoC B117).
+            </figcaption>
+	    </div>
+    </div>
+
+    <!-- *** Section 5 - Global Prevalence *** --->
+    <div class="row" id="section5">
+      <div class="col-6">
+              <h3>Supporting Information</h3>
+              This section contains figures that show useful information, but were deemed as 
+              "too biased" to be included in the main report. 
+              In other words, although these plots reflect current case numbers, 
+              they fail to take into account contextual information when reporting those numbers.
+      </div>
+      <div class="col-3 offset-md-3">
+        <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section4">PREV</a>
+              <a type="button" class="btn btn-primary btn-sm nav-a text-end" href="#section6">NEXT</a>
+      </div>
+      <hr>
+          <div class="row">
+              <figure>
+                {{ca_time}}
+                <figcaption>Figure S.1 shows the temporal (over time) prevalence of the strain 
+                  in California. This is represented as cumulative number of {{strain}} samples over time.
+                </figcaption>
+          </div>
+          <div class="row">
+            <figure>
+              {{us_time}}
+              <figcaption>Figure S.2 shows the temporal (over time) prevalence of the strain 
+                in USA. This is represented as cumulative number of {{strain}} samples over time.
+              </figcaption>
+          </div>
+        <div class="row">
+          <figure>
+            {{world_time}}
+            <figcaption>Figure S.3 shows the temporal (over time) prevalence of the strain 
+              in California. This is represented as cumulative number of {{strain}} samples over time.
+            </figcaption>
+      </div>
+    </div>
+  </body>
+</html>
