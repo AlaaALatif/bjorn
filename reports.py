@@ -10,21 +10,31 @@ import visualize as bv
 def generate_voc_html(feature: str, values: list, results: dict, template_name: str='voc.html'):
     # express plots in html and JS
     mutation_diversity = ''
+    # config = dict({'displaylogo': False})
+    config = {'displaylogo': False,
+              'scrollZoom': False,
+              'modeBarButtonsToAdd':['drawline',
+                                    'drawopenpath',
+                                    'drawrect',
+                                    'eraseshape'
+                                       ],
+              'modeBarButtonsToRemove': ['toggleSpikelines','hoverCompareCartesian','lasso2d']}
+    # config = {'displayModeBar': False}
     if results.get('mutation_diversity', None):
-        mutation_diversity = plotly.offline.plot(results['mutation_diversity'], include_plotlyjs=False, output_type='div')
-    sampling_img = plotly.offline.plot(results['sampling_fig'], include_plotlyjs=False, output_type='div')
-    world_time = plotly.offline.plot(results['world_time'], include_plotlyjs=False, output_type='div')
-    us_time = plotly.offline.plot(results['us_time'], include_plotlyjs=False, output_type='div')
-    ca_time = plotly.offline.plot(results['ca_time'], include_plotlyjs=False, output_type='div')
-    world_rtime = plotly.offline.plot(results['world_rtime'], include_plotlyjs=False, output_type='div')
-    us_rtime = plotly.offline.plot(results['us_rtime'], include_plotlyjs=False, output_type='div')
-    ca_rtime = plotly.offline.plot(results['ca_rtime'], include_plotlyjs=False, output_type='div')
+        mutation_diversity = plotly.offline.plot(results['mutation_diversity'], include_plotlyjs=False, output_type='div', config=config)
+    sampling_img = plotly.offline.plot(results['sampling_fig'], include_plotlyjs=False, output_type='div', config=config)
+    world_time = plotly.offline.plot(results['world_time'], include_plotlyjs=False, output_type='div', config=config)
+    us_time = plotly.offline.plot(results['us_time'], include_plotlyjs=False, output_type='div', config=config)
+    ca_time = plotly.offline.plot(results['ca_time'], include_plotlyjs=False, output_type='div', config=config)
+    world_rtime = plotly.offline.plot(results['world_rtime'], include_plotlyjs=False, output_type='div', config=config)
+    us_rtime = plotly.offline.plot(results['us_rtime'], include_plotlyjs=False, output_type='div', config=config)
+    ca_rtime = plotly.offline.plot(results['ca_rtime'], include_plotlyjs=False, output_type='div', config=config)
     world_map = plotly.offline.plot(results['world_map'],
-                                    include_plotlyjs=False, output_type='div')
-    state_map = plotly.offline.plot(results['state_map'], include_plotlyjs=False, output_type='div')
-    county_map = plotly.offline.plot(results['county_map'], include_plotlyjs=False, output_type='div')
+                                    include_plotlyjs=False, output_type='div', config=config)
+    state_map = plotly.offline.plot(results['state_map'], include_plotlyjs=False, output_type='div', config=config)
+    county_map = plotly.offline.plot(results['county_map'], include_plotlyjs=False, output_type='div', config=config)
     # genetic_distance_plot = plotly.offline.plot(results['genetic_distance_plot'], include_plotlyjs=False, output_type='div')
-    strain_distance_plot = plotly.offline.plot(results['strain_distance_plot'], include_plotlyjs=False, output_type='div')
+    strain_distance_plot = plotly.offline.plot(results['strain_distance_plot'], include_plotlyjs=False, output_type='div', config=config)
     # aa_distance_plot = plotly.offline.plot(results['aa_distance_plot'], include_plotlyjs=False, output_type='div')
     # s_aa_distance_plot = plotly.offline.plot(results['s_aa_distance_plot'], include_plotlyjs=False, output_type='div')
     # generate output messages

@@ -247,7 +247,7 @@ def us_time_relative(data, feature, values, res, strain='B117', country='USA', v
         fig.add_trace(
             go.Scatter(y=sdrop_us_time['rel_freq'], 
                         x=sdrop_us_time['date'], 
-                        name='biased sampling <br> (S Drop screen)',
+                        name='biased sampling <br> (more info in a later section)',
                         mode='markers+lines', 
                         line_color='rgba(30,144,255,.6)',
                         text=sdrop_us_time[['num_samples', 'states', 
@@ -288,7 +288,7 @@ def us_time(data, feature, values, res, strain='B117', country='USA'):
         results = (res[(res['is_vui']==True)
                         & (res['country']=='United States of America')]
                         .drop_duplicates(subset=['date', 'strain']))
-    results['purpose_of_sequencing'] = '?'
+    results['purpose_of_sequencing'] = 'S'
     random = results[results['purpose_of_sequencing']=='?']
     biased = results[results['purpose_of_sequencing']!='?']
     b117_us_time = (random.groupby('date')
@@ -346,7 +346,7 @@ def us_time(data, feature, values, res, strain='B117', country='USA'):
         fig.add_trace(
             go.Scatter(y=sdrop_us_time['cum_num_samples'], 
                         x=sdrop_us_time['date'], 
-                        name='biased sampling <br> (S Drop screen)',
+                        name='biased sampling <br> (see notes on sampling)',
                         mode='markers+lines', 
                         line_color='rgba(30,144,255,.6)',
                         text=sdrop_us_time[['num_samples', 'states', 
@@ -463,7 +463,7 @@ def ca_time_relative(data, feature, values, res,
         fig.add_trace(
             go.Scatter(y=sdrop_ca_time['rel_freq'], 
                         x=sdrop_ca_time['date'], 
-                        name='biased sampling <br> (S Drop screen)', 
+                        name='biased sampling (read next section)', 
                         mode='markers+lines', 
                         line_color='rgba(30,144,255,.6)',
                         text=sdrop_ca_time[['num_samples', 'counties', 
@@ -507,7 +507,7 @@ def ca_time(data, feature, values, res, strain='B117', state='California'):
         # results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
         results = res[(res['is_vui']==True)
                       &(res['division']==state)].drop_duplicates(subset=['date', 'strain'])
-    results['purpose_of_sequencing'] = '?'
+    results['purpose_of_sequencing'] = 'S'
     random = results[results['purpose_of_sequencing']=='?']
     biased = results[results['purpose_of_sequencing']!='?']
     b117_ca_time = (random.groupby('date')
@@ -555,7 +555,7 @@ def ca_time(data, feature, values, res, strain='B117', state='California'):
         fig.add_trace(
             go.Scatter(y=sdrop_ca_time['cum_num_samples'], 
                         x=sdrop_ca_time['date'], 
-                        name='biased sampling <br> (S Drop screen)', 
+                        name='biased sampling <br> (see notes on sampling)', 
                         mode='markers+lines', 
                         line_color='rgba(30,144,255,.6)',
                         text=sdrop_ca_time[['num_samples', 'counties', 
@@ -595,6 +595,8 @@ def strain_nt_distance(data, feature, values, strain='B117', sample_sz=250, vocs
     else:
         raise ValueError(f"Feature of type {feature} is not yet available for analysis. Aborting...")
     dists_df['num_subs'] = dists_df['mutations'].str.len() / 29904
+    # ignore seqs with unexpectedly high dists
+    dists_df = dists_df[dists_df['num_subs']<=0.0013]
     dists_df = dists_df[~dists_df['date'].isna()]
     dists_df.loc[:, 'date'] = pd.to_datetime(dists_df['date'], errors='coerce')
     dists_df['time'] = dists_df['date'].astype(str).apply(bv.decimal_date)
@@ -1011,8 +1013,8 @@ def b117_genetic_distance(gisaid_data, msa_fp, b117_meta, patient_zero,
     sois = us_ids+outgrp_ids+b117_ids+[patient_zero]
     tree_fp = Path('tmp/b117_seqs_aligned.fasta' + '.treefile')
     if not Path.isfile(tree_fp):
-        bs.fetch_seqs(msa_fp, 'tmp/b117_seqs_aligned.fasta', sois, is_aligned=True)
-        tree_fp = bs.compute_tree('tmp/b117_seqs_aligned.fasta', num_cpus=20, redo=True)
+        bs.fetch_seqs(msa_fp, 'tmp/b117_seqs_aligned.fasta', sois, is_aligned=True, is_gzip=True)
+        tree_fp = bs.compute_tree('tmp/b117_seqs_aligned.fasta', num_cpus=20, redo=False)
     tree = ot.load_tree(tree_fp, patient_zero)
     dists = {n.name: tree.distance(n.name, patient_zero) for n in tree.get_terminals()}
     dists_df = (pd.DataFrame(index=dists.keys(), data=dists.values(), 
@@ -1217,7 +1219,7 @@ def map_by_state(data: pd.DataFrame, feature: str, values: list, states_fp: str,
     results_by_state['log_num_samples'] = results_by_state['num_samples'].apply(lambda x: np.log(x))
     fig = px.choropleth_mapbox(results_by_state, geojson=states, 
                                locations='id', color='log_num_samples',
-                               color_continuous_scale='Bluyl', center={"lat": 44.0902, "lon": -70.7129},
+                               color_continuous_scale='Bluyl', center={"lat": 37.0902, "lon": -100.7129},
                                range_color=(0, results_by_state['log_num_samples'].max()),
                                mapbox_style="carto-positron", zoom=2.75,
                                opacity=0.5,
@@ -1229,7 +1231,7 @@ def map_by_state(data: pd.DataFrame, feature: str, values: list, states_fp: str,
                                        ticktext=[int(np.exp(i)) for i in tickvals],
                                        title=f"{strain} Cases <br>(logarithmic)",
                                        y=0.5, x=0))
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, autosize=True)
+    fig.update_layout(margin={"t":0,"l":0,"b":0}, autosize=True)
     return fig, state_map, results_by_state
 
 
@@ -1258,7 +1260,7 @@ def map_by_country(data: pd.DataFrame, feature: str, values: list, countries_fp,
                                color_continuous_scale="Bluyl",
                                range_color=(0, results_by_cntry['log_num_samples'].max()),
                                mapbox_style="carto-positron", zoom=0.2,
-                               opacity=0.5, center={"lat": 40.0902, "lon": 114.0},
+                               opacity=0.5, center={"lat": 40.0902, "lon": 15.0},
                                hover_data=['country', 'num_samples', 'total_samples'],
                                labels={'num_samples':f'Sequences with {strain}', 'total_samples': 'Total Sequences'}
                               )
@@ -1268,7 +1270,7 @@ def map_by_country(data: pd.DataFrame, feature: str, values: list, countries_fp,
                                        ticktext=[int(np.exp(i)) for i in tickvals],
                                        title=f"{strain} Cases <br>(logarithmic)",
                                        y=0.5, x=0))
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, autosize=True)
+    fig.update_layout(margin={"r": 0, "t":0,"l":0,"b":0}, autosize=True)
     return fig, country_map, results_by_cntry
 
 
@@ -1307,7 +1309,7 @@ def map_by_county(data: pd.DataFrame, feature: str, values: list,
     results_by_county = results_by_county[results_by_county['county']!='unk']
     fig = px.choropleth_mapbox(results_by_county, geojson=counties, 
                                locations='id', color='log_num_samples',
-                               color_continuous_scale="Bluyl", center={"lat": 35.7783, "lon": -110.4179},
+                               color_continuous_scale="Bluyl", center={"lat": 40, "lon": -120},
                                range_color=(0, results_by_county['log_num_samples'].max()),
                                mapbox_style="carto-positron", zoom=4,
                                opacity=0.5,
@@ -1321,7 +1323,7 @@ def map_by_county(data: pd.DataFrame, feature: str, values: list,
                                        ticktext=[int(np.exp(i)) for i in tickvals],
                                        title=f"{strain} Cases <br>(logarithmic)",
                                        y=0.5, x=0))
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, autosize=True)
+    fig.update_layout(margin={"t":0,"l":0,"b":0}, autosize=True)
     return fig, counties_map, results_by_county
 
 
