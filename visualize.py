@@ -1101,7 +1101,7 @@ def mutation_diversity(data, mutation, strain='S:L452R'):
     title2 = 'B'
 #     f"B: Distribution of {strain} across lineages"
     fig = make_subplots(rows=2, cols=1, row_heights=[0.1, 0.9], 
-                        subplot_titles=(title1, title2), vertical_spacing=0.2)
+                        subplot_titles=(title1, title2), vertical_spacing=0.05)
     codon_counts = (data.loc[data['mutation']==mutation, 'alt_codon']
                       .value_counts()
                       .to_frame()
@@ -1132,7 +1132,8 @@ def mutation_diversity(data, mutation, strain='S:L452R'):
     fig.update_yaxes(title_text="Lineage (pangolin)", row=2, col=1)
     fig.update_xaxes(title_text="Number of Sequences", row=2, col=1)
     fig.update_layout(title=f"Reference codon: {ref_codon}, Position: {ref_pos}", 
-                      template='plotly_white', width=500, showlegend=False)
+                      template='plotly_white', width=500, showlegend=False,
+                     margin={"r":0})
     return fig
 
 
