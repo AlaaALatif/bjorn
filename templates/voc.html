@@ -30,23 +30,20 @@
   <body>
     <nav class="navbar navbar-dark bg-dark">
       <div class="container-fluid">
-	<span class="navbar-brand mb-0 h1">SITREP: B.1.1.7 lineage in USA</span>
+	<span class="navbar-brand mb-0 h1">Situation Report (SITREP) regarding B.1.1.7 lineage in USA:</span>
       </div>
     </nav>
     <br>
     <div class="container">
       <!-- *** Section 1 - General Info *** --->
       <div class="row" id="section1">
-	<div class="col-6">
-          <h3> General Information </h3>
-	</div>
     <hr>
     <div class="alert alert-light" role="alert">
         Concerns surrounding a new strain of SARS-CoV-2, 
       the virus behind the COVID-19 pandemic, have been developing.
       B.1.1.7, also known as Variant of Concern 202012/01 
       (VOC 202012/01) or 20B/501Y.V1, was first identified in the UK 
-      in early December 2020 and has since been detected in the US 
+      and has since been detected in the US 
       and other countries. The growing concern is primarily because 
       it has shown to be significantly more transmissible than other 
       variants. The data presented was gratefully sourced from 
@@ -62,7 +59,7 @@
 	<!-- </div> -->
       <!-- <div class="row"> -->
         <div class="row align-items-center">
-        <div class="col">
+        <div class="col-md-6">
           <table class='table'>
             <caption>Table 1.1: Key Mutations that define the strain</caption>
             <tr>
@@ -96,7 +93,7 @@
             </tr>
           </table>
         </div>
-        <div class="col">
+        <div class="col-md-6">
           <figure class="figure">
             {{strain_distance_plot}}
             <figcaption class="figure-caption">Figure 1.1: genetic distance (root-to-tip), a measure of evolutionary
@@ -135,14 +132,14 @@
           <h3>National Prevalence</h3>
 	</div>
 	<hr>
-        <div class="col-6">
+        <div class="col-md-6">
           <figure class="figure">
             {{state_map}}
             <figcaption class="figure-caption">Figure 3.1: the spatial (geographical) prevalence of the strain across the US.
             </figcaption>
           </figure>
 	      </div>
-        <div class="col-6">
+        <div class="col-md-6">
           <figure class="figure">
             {{us_time}}
             <figcaption class="figure-caption">Figure 3.2: the temporal (over time) prevalence of the strain across the US.
@@ -162,7 +159,7 @@
           </div>
 	</div>
   <hr>
-        <div class="col-6">
+        <div class="col-md-6">
           <figure class="figure">
             {{world_map}}
             <figcaption class="figure-caption">Figure: the spatial (geographical) prevalence of the strain 
@@ -170,7 +167,7 @@
             </figcaption>
           </figure>
 	      </div>
-        <div class="col-6">
+        <div class="col-md-6">
           <figure class="figure">
             {{world_time}}
             <figcaption class="figure-caption">Figure 4.2: the temporal (over time) prevalence of the strain 
@@ -187,15 +184,14 @@
           <h3>Notes on Sampling</h3>
 	      </div>
 	<hr>
-        <p>As figure 3.2 indicates, the majority of B.1.1.7 genomes identified in the US (so far), 
-          were identified by S-gene 
-          target failures (SGTF) in community-based diagnostic PCR testing. Since 
-          it was not an unbiased approach, it does not indicate the true prevalence 
-          of the {{strain}} lineage in the US. This only tells us that the lineage is 
-          present in the US. <br>
-          P.S: estimates of true prevalence in the US are discussed in 
-          <a href="https://blog.helix.com/b117-variant-updated-data/">this post</a>
-  </p>
+        <p>
+          As figure 3.2 indicates, the majority of B.1.1.7 genomes identified in the US to-date were identified by S-gene target failures (SGTF) 
+          in community-based diagnostic PCR testing. 
+          SGTF indicates a deletion mutation that is one of several mutations able to distinguish the B.1.1.7 from other SARS-CoV-2 strains. 
+          <br>This tells us the lineage is present in the US. However, since this was not an unbiased sampling approach, 
+          it does not indicate the true prevalence of the B117 lineage in the US. 
+          Estimates of true prevalence in the US are discussed <a href="https://blog.helix.com/b117-variant-updated-data/">here</a>.
+        </p>
   
     <figure class="figure">
       {{ sampling_img }}
@@ -223,12 +219,12 @@
           <br><br>
           Specifically when uploading genomes to GISAID or GenBank, please indicate if the sample was identified via S-gene target failures (SGTF). This can be indicated under the fields "purpose_of_sequencing" (GISAID) or "Additional host information". This will help in identifying the true prevalence of the lineage across the country.
               </div>
-              <div class="col">
+              <!-- <div class="col">
                 <iframe
                   src="https://giphy.com/embed/U2AJtvSsNCl4oFjWvj" width="480" height="270" frameBorder="0" class="giphy-embed" allowFullScreen>
                 </iframe>
                 <p><a href="https://giphy.com/gifs/davidmakesman-own-dmm-david-makes-man-U2AJtvSsNCl4oFjWvj">via GIPHY</a></p>
-              </div>
+              </div> -->
             </div>
           </div>
   </body>
