@@ -1,6 +1,7 @@
 import sys
 import glob
 import subprocess
+import gzip
 from path import Path
 import numpy as np
 import pandas as pd
@@ -32,13 +33,21 @@ def clean_locs(x):
     return 'unk'
 
 
-def fetch_seqs(seqs_filepath, out_fp, sample_idxs: list, is_aligned=False):
+def fetch_seqs(seqs_filepath, out_fp, sample_idxs: list, is_aligned=False, is_gzip=False):
     if is_aligned:
-        cns = AlignIO.read(seqs_filepath, 'fasta')
+        if is_gzip:
+            with gzip.open(seqs_filepath, "rt") as handle:
+                cns = AlignIO.read(handle, 'fasta')
+        else:
+            cns = AlignIO.read(seqs_filepath, 'fasta')
         my_cns = Align.MultipleSeqAlignment([rec for rec in cns if rec.id in sample_idxs])
         return AlignIO.write(my_cns, out_fp, 'fasta')
     else:
-        cns = SeqIO.parse(seqs_filepath, 'fasta')
+        if is_gzip:
+            with gzip.open(seqs_filepath, "rt") as handle:
+                cns = SeqIO.parse(handle, 'fasta')
+        else:
+            cns = SeqIO.parse(seqs_filepath, 'fasta')
         my_cns = [rec for rec in cns if rec.id in sample_idxs]
         return SeqIO.write(my_cns, out_fp, 'fasta')
 
