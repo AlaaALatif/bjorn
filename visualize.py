@@ -146,7 +146,7 @@ def world_time(data, feature, values, res, strain='B117'):
             text=f"On Earth, {strain} 1st detected in <br> {', '.join(first_countries.values[0])} <br> on <br> {first_detected.date()}",
             showarrow=True,
             arrowhead=1, yshift=10, arrowsize=2, ay=-250, ax=100)
-    fig.update_layout(yaxis_title='Global umulative number of cases over time', 
+    fig.update_layout(yaxis_title='Global cumulative number of cases over time', 
                       xaxis_title='Collection Date',
                       template='plotly_white', autosize=True)#, height=850,
     fig.update_yaxes(side = 'right')
@@ -288,7 +288,7 @@ def us_time(data, feature, values, res, strain='B117', country='USA'):
         results = (res[(res['is_vui']==True)
                         & (res['country']=='United States of America')]
                         .drop_duplicates(subset=['date', 'strain']))
-    results['purpose_of_sequencing'] = 'S'
+    results['purpose_of_sequencing'] = '?'
     random = results[results['purpose_of_sequencing']=='?']
     biased = results[results['purpose_of_sequencing']!='?']
     b117_us_time = (random.groupby('date')
@@ -507,7 +507,7 @@ def ca_time(data, feature, values, res, strain='B117', state='California'):
         # results['is_vui'] = results['mutations'].apply(is_vui, args=(set(values),))
         results = res[(res['is_vui']==True)
                       &(res['division']==state)].drop_duplicates(subset=['date', 'strain'])
-    results['purpose_of_sequencing'] = 'S'
+    results['purpose_of_sequencing'] = '?'
     random = results[results['purpose_of_sequencing']=='?']
     biased = results[results['purpose_of_sequencing']!='?']
     b117_ca_time = (random.groupby('date')
