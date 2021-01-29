@@ -84,6 +84,7 @@ def identify_replacements_per_sample(input_fasta,
                                      gene2pos,
                                      data_src,
                                      patient_zero: str='NC_045512.2',
+                                     ref_path: str='/home/al/data/hcov19/NC045512.fasta',
                                      is_gzip: bool=False,
                                      test: bool=False):
     print(f"Loading Alignment file at: {input_fasta}")
@@ -94,7 +95,8 @@ def identify_replacements_per_sample(input_fasta,
         cns = AlignIO.read(input_fasta, 'fasta')
     print(f"Initial cleaning...")
     seqs, ref_seq = process_cns_seqs(cns, patient_zero,
-                                     start_pos=0, end_pos=30000)
+                                     start_pos=0, end_pos=29674)
+#     ref_seq = get_seq_from_fasta(ref_path)
     seqsdf = (pd.DataFrame(index=seqs.keys(), 
                            data=seqs.values(), 
                            columns=['sequence'])
@@ -102,6 +104,8 @@ def identify_replacements_per_sample(input_fasta,
                 .rename(columns={'index': 'idx'}))
     if test:
         seqsdf = seqsdf.sample(100)
+    print(f"Trimming untranslated regions")
+    
     print(f"Identifying mutations...")
     # for each sample, identify list of substitutions (position:alt)
     seqsdf['replacements'] = seqsdf['sequence'].apply(find_replacements, 
@@ -579,6 +583,11 @@ def get_seq(all_seqs: Align.MultipleSeqAlignment, sample_name: str) -> str:
     if len(str(seq))==0:
         print('WARNING: reference sequence not acquired. Something is off.')
     return str(seq)
+
+
+def get_seq_from_fasta(fasta_filepath):
+    seq = SeqIO.read(fasta_filepath, 'fasta')
+    return str(seq.seq)
 
 
 def identify_insertion_positions(ref_seq: str) -> list:
