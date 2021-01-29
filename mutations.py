@@ -1,9 +1,11 @@
 import os
+import gc
 import math
 import re
 import gzip
 import numpy as np
 import pandas as pd
+
 import more_itertools as mit
 from Bio import Seq, SeqIO, AlignIO, Phylo, Align
 from bjorn_support import map_gene_to_pos
@@ -104,12 +106,16 @@ def identify_replacements_per_sample(input_fasta,
                 .rename(columns={'index': 'idx'}))
     if test:
         seqsdf = seqsdf.sample(100)
-    print(f"Trimming untranslated regions")
-    
     print(f"Identifying mutations...")
     # for each sample, identify list of substitutions (position:alt)
     seqsdf['replacements'] = seqsdf['sequence'].apply(find_replacements, 
                                                       args=(ref_seq,))
+    # sequences with one or more deletions
+    seqsdf = seqsdf.loc[seqsdf['replacements'].str.len() > 0]
+    seqs = dict(zip(seqsdf['idx'], seqsdf['sequence']))
+    # drop the actual sequences to save mem
+    seqsdf.drop(columns=['sequence'], inplace=True)
+    gc.collect();
     # wide-to-long data manipulation
     seqsdf = seqsdf.explode('replacements')
     # initialize position column
@@ -127,15 +133,18 @@ def identify_replacements_per_sample(input_fasta,
     seqsdf = seqsdf.loc[seqsdf['gene']!='nan']
     print(f"Computing codon numbers...")
     # compute codon number of each substitution
-    seqsdf['codon_num'] = seqsdf.apply(compute_codon_num, args=(gene2pos,), axis=1)
+    seqsdf['gene_start_pos'] = seqsdf['gene'].apply(lambda x: gene2pos[x]['start'])
+    seqsdf['codon_num'] = np.ceil((seqsdf['pos'] - seqsdf['gene_start_pos'] + 1) / 3).astype(int)
+    # seqsdf['codon_num'] = seqsdf.apply(compute_codon_num, args=(gene2pos,), axis=1)
     print(f"Fetching reference codon...")
     # fetch the reference codon for each substitution
-    seqsdf['ref_codon'] = seqsdf.apply(get_ref_codon, args=(ref_seq, gene2pos), axis=1)
+    seqsdf['codon_start'] = seqsdf['gene_start_pos'] + (3*(seqsdf['codon_num'] - 1))
+    seqsdf['ref_codon'] = seqsdf['codon_start'].apply(lambda x: ref_seq[x:x+3].upper())
+    # seqsdf['ref_codon'] = seqsdf.apply(get_ref_codon, args=(ref_seq, gene2pos), axis=1)
     print(f"Fetching alternative codon...")
     # fetch the alternative codon for each substitution
-    seqsdf['alt_codon'] = seqsdf.apply(get_alt_codon, args=(gene2pos,), axis=1)
-    # drop the actual sequences to save mem
-    seqsdf.drop(columns=['sequence'], inplace=True)
+    seqsdf['alt_codon'] = seqsdf[['idx', 'codon_start']].apply(get_alt_codon, args=(seqs,), axis=1)
+    # seqsdf['alt_codon'] = seqsdf.apply(get_alt_codon_old, args=(seqs, gene2pos,), axis=1)
     print(f"Mapping amino acids...")
     # fetch the reference and alternative amino acids
     seqsdf['ref_aa'] = seqsdf['ref_codon'].apply(get_aa)
@@ -188,10 +197,16 @@ def get_ref_codon(x, ref_seq, gene2pos: dict):
     return ref_seq[codon_start: codon_start+3].upper()
 
 
-def get_alt_codon(x, gene2pos: dict):
+def get_alt_codon(x, seqs: dict):
+    seq = seqs[x['idx']]
+    codon_start = x['codon_start']
+    return seq[codon_start:codon_start+3].upper()
+
+
+def get_alt_codon_old(x, seqs: dict, gene2pos: dict):
     ref_pos = gene2pos[x['gene']]['start']
     codon_start = ref_pos + ((x['codon_num'] - 1) * 3)
-    return x['sequence'][codon_start: codon_start+3].upper()
+    return seqs[x['idx']][codon_start: codon_start+3].upper()
 
 
 def get_aa(codon: str):
