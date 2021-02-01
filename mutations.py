@@ -81,20 +81,19 @@ def process_samples(x):
     return x
 
 
-def identify_replacements_per_sample(input_fasta, 
+def identify_replacements_per_sample(cns, 
                                      meta_fp,
                                      gene2pos,
                                      data_src,
                                      patient_zero: str='NC_045512.2',
                                      ref_path: str='/home/al/data/hcov19/NC045512.fasta',
-                                     is_gzip: bool=False,
                                      test: bool=False):
-    print(f"Loading Alignment file at: {input_fasta}")
-    if is_gzip:
-        with gzip.open(input_fasta, "rt") as handle:
-            cns = AlignIO.read(handle, 'fasta')
-    else:
-        cns = AlignIO.read(input_fasta, 'fasta')
+    # print(f"Loading Alignment file at: {input_fasta}")
+    # if is_gzip:
+    #     with gzip.open(input_fasta, "rt") as handle:
+    #         cns = AlignIO.read(handle, 'fasta')
+    # else:
+    #     cns = AlignIO.read(input_fasta, 'fasta')
     print(f"Initial cleaning...")
     seqs, ref_seq = process_cns_seqs(cns, patient_zero,
                                      start_pos=0, end_pos=29674)
@@ -323,22 +322,22 @@ def identify_deletions(input_fasta: str,
     return del_seqs#[cols]
 
 
-def identify_deletions_per_sample(input_fasta, meta_fp, 
+def identify_deletions_per_sample(cns, 
+                                  meta_fp, 
                                   gene2pos, 
                                   data_src,
                                   min_del_len=1, 
                                   start_pos=265,
                                   end_pos=29674,
                                   patient_zero: str='NC_045512.2',
-                                  is_gzip: bool=False,
                                   test=False):
     # read MSA file
-    print(f"Loading Alignment file at: {input_fasta}")
-    if is_gzip:
-        with gzip.open(input_fasta, "rt") as handle:
-            cns = AlignIO.read(handle, 'fasta')
-    else:
-        cns = AlignIO.read(input_fasta, 'fasta')
+    # print(f"Loading Alignment file at: {input_fasta}")
+    # if is_gzip:
+    #     with gzip.open(input_fasta, "rt") as handle:
+    #         cns = AlignIO.read(handle, 'fasta')
+    # else:
+    #     cns = AlignIO.read(input_fasta, 'fasta')
     # prcess MSA to remove insertions and fix position coordinate systems
     seqs, ref_seq = process_cns_seqs(cns, patient_zero, start_pos, end_pos)
     print(f"Initial cleaning...")
