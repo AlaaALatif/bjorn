@@ -92,8 +92,10 @@ def generate_voc_data(feature, values, input_params):
         print(f"Loading metadata...")
         gisaid_data = pd.read_csv(input_params['gisaid_meta_fp'], sep='\t', compression='gzip')
         gisaid_data.loc[gisaid_data['location'].isna(), 'location'] = 'unk'
+    
     gisaid_data.loc[gisaid_data['country']=='USA', 'country'] = 'United States of America'
     print(f"Collecting input parameters...")
+    date = input_params['date']
     sampling_type = input_params['sampling_type']
     sampling_img_fp = input_params['sampling_img_fp']
     msa_fp = input_params['msa_fp']
@@ -122,10 +124,12 @@ def generate_voc_data(feature, values, input_params):
     gisaid_data['tmp'] = gisaid_data['date'].str.split('-')
     gisaid_data = gisaid_data[gisaid_data['tmp'].str.len()>=3]
     gisaid_data['date'] = pd.to_datetime(gisaid_data['date'], errors='coerce')
+    gisaid_data = gisaid_data[gisaid_data['date']<date]
     if res.shape[0]!=0:
         res['tmp'] = res['date'].astype(str).str.split('-')
         res = res[res['tmp'].str.len()>=3]
         res['date'] = pd.to_datetime(res['date'], errors='coerce')
+        res = res[res['date']<date]
 #     gisaid_data = gisaid_data[~((gisaid_data['pangolin_lineage']=='B.1.1.7')
 #                             &(gisaid_data['date'].dt.month==1)) & 
 #                           (gisaid_data['date'].dt.year>=2020) &

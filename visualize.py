@@ -662,6 +662,7 @@ def strain_nt_distance(data, feature, values, strain='B117', sample_sz=250, vocs
     fig.update_layout(yaxis_title='Genetic Distance (root-to-tip)',
                       xaxis_title='Collection Date',
                       template='plotly_white', autosize=True,
+                      margin={"l":1},
                       legend=dict(
                                     yanchor="top",
                                     y=0.99,
@@ -669,6 +670,7 @@ def strain_nt_distance(data, feature, values, strain='B117', sample_sz=250, vocs
                                     x=0.01
                                 )
                                 )#, height=850,
+    fig.update_yaxes(side = 'right')
     return fig
 
 
@@ -1151,9 +1153,10 @@ def mutation_diversity(data, mutation, strain='S:L452R'):
     fig.update_xaxes(title_text="Number of Sequences", row=2, col=1)
     fig.update_layout(title=f"Reference codon: {ref_codon}, Position: {ref_pos}", 
                       template='plotly_white', 
-                      autosize=True, #width=500, 
+                    #   autosize=True, 
+                      width=500, 
                       showlegend=False,
-                     margin={"r":0.1})
+                     margin={"r":3})
     return fig
 
 
@@ -1209,8 +1212,9 @@ def mutation_diversity_multi(data, mutations, res, strain='CAVUI1'):
     fig.update_yaxes(title_text="Lineage (pangolin)", row=2, col=1)
     fig.update_xaxes(title_text="Number of Sequences", row=2, col=1)
     fig.update_layout(template='plotly_white', showlegend=False, 
-                      autosize=True,#  width=500,
-                      #margin={"r":0.1}
+                    #   autosize=True,
+                      width=500,
+                      margin={"r":3}
                      )
     for i in range(len(mutations)):
         fig.update_xaxes(showticklabels=False, row=1, col=i+1)
