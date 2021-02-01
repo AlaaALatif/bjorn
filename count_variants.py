@@ -83,6 +83,7 @@ with open(out_dir/'log.txt', 'w') as f:
     f.write(f"datafunk Execution Time: {(datafunk_time / 60):.2f} minutes\n")
     f.write(f"Alignment loading Execution Time: {(msa_load_time / 60):.2f} minutes\n")
     f.write(f"Counting Substitutions Execution Time: {(subs_time / 60):.2f} minutes\n")
+    f.write(f"Counting Deletions Execution Time: {(dels_time / 60):.2f} minutes\n")
     f.write(f"Alignment loading Execution Time: {(msa_load_time / 60):.2f} minutes\n")
     
 print(f"""END:\tprocess complete. 
